@@ -3,9 +3,7 @@ use awc::Client;
 use bundlr_sdk::verify::{file::verify_file_bundle};
 use paris::error;
 use serde::{Deserialize, Serialize};
-
 use crate::types::Validator;
-
 use super::error::ValidatorCronError;
 
 #[derive(Default)]
@@ -28,16 +26,24 @@ pub struct Tx {
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
     Ok(Bundler { 
-                address: "address1".to_string(),
+                address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
                 url: "url".to_string()
             })
 }
 
 pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError> {
-
     // Get latest txs for bundler
     // TODO: Get tx info
+    //let txs = get_txs(bundler, from_last_page, max_results);
     let txs = Vec::<Tx>::new();
+
+    let client = Client::default();
+
+    let response = client
+        .get(format!("{}//{}", bundler.url, bundler.address))
+        .send()
+        .await;
+
 
     // For each tx see if I or my peers have the tx in their db
     for tx in txs {

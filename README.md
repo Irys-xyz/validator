@@ -1,4 +1,4 @@
-# tiny_blockchain
+# validator_rust
 
 Bundlr validator implementation in Rust
 

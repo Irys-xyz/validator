@@ -2,7 +2,7 @@ mod bundle;
 mod error;
 mod validate;
 mod contract;
-mod arweave;
+pub mod arweave;
 
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ use self::error::ValidatorCronError;
 
 // Update contract state
 pub async fn run_crons() {
-    info!("hi");
+    info!("Validator starting ...");
     join!(
         create_cron("update contract", contract::update_contract, 30),
         create_cron("validate bundler", validate::validate, 2 * 60)
