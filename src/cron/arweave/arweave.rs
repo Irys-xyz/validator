@@ -15,6 +15,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::iter::Iterator;
+use futures::{ stream, StreamExt };
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -135,36 +136,6 @@ enum State {
   #[allow(dead_code)]
   End,
 }
-impl Iterator for State {
-  // we will be counting with usize
-  type Item = Option<String>;
-  fn next(&mut self) -> Option<Self::Item> {
-    let mut new_variables: InteractionVariables = variables.clone();
-
-    new_variables.after = cursor;
-
-    let tx = self
-      .get_next_interaction_page(new_variables, false, None)
-      .await
-      .unwrap();
-
-    if tx.edges.is_empty() {
-      None
-    } else {
-      let max_requests = self.get_max_edges(&tx.edges);
-
-      let edge = tx.edges.get(max_requests);
-
-      if let Some(result_edge) = edge {
-        let cursor = (&result_edge.cursor).to_owned();
-        Some((tx, State::Next(Some(cursor), variables)))
-      } else {
-        None
-      }
-    }
-  }
-}
-
 
 pub static MAX_REQUEST: usize = 100;
 
@@ -193,7 +164,7 @@ impl Arweave {
     }
   }
 
-  pub async fn get_transaction(
+  pub async fn get_tx(
     &self,
     transaction_id: &str,
   ) -> reqwest::Result<TransactionData> {
@@ -207,7 +178,7 @@ impl Arweave {
     transaction
   }
 
-  pub async fn get_transaction_data(&self, transaction_id: &str) -> Vec<u8> {
+  pub async fn get_tx_data(&self, transaction_id: &str) -> Vec<u8> {
     let request = self
       .client
       .get(format!("{}/{}", self.get_host(), transaction_id))
@@ -217,7 +188,7 @@ impl Arweave {
     request.bytes().await.unwrap().to_vec()
   }
 
-  pub async fn get_transaction_block(
+  pub async fn get_tx_block(
     &self,
     transaction_id: &str,
   ) -> reqwest::Result<BlockInfo> {
@@ -460,7 +431,7 @@ impl Arweave {
     if result.is_some() {
       Ok(result.unwrap())
     } else {
-      let contract_transaction = self.get_transaction(&contract_id).await?;
+      let contract_transaction = self.get_tx(&contract_id).await?;
 
       let contract_src = contract_src_tx_id
         .or_else(|| contract_transaction.get_tag("Contract-Src").ok())
@@ -470,10 +441,10 @@ impl Arweave {
 
       let min_fee = contract_transaction.get_tag("Min-Fee").ok();
 
-      let contract_src_tx = self.get_transaction(&contract_src).await?;
+      let contract_src_tx = self.get_tx(&contract_src).await?;
 
       let contract_src_data =
-        self.get_transaction_data(&contract_src_tx.id).await;
+        self.get_tx_data(&contract_src_tx.id).await;
 
       let mut state: String;
 
@@ -482,14 +453,14 @@ impl Arweave {
       } else if let Ok(init_state_tag_txid) =
         contract_transaction.get_tag("Init-State-TX")
       {
-        let init_state_tx = self.get_transaction(&init_state_tag_txid).await?;
+        let init_state_tx = self.get_tx(&init_state_tag_txid).await?;
         state = decode_base_64(init_state_tx.data);
       } else {
         state = decode_base_64(contract_transaction.data.to_owned());
 
         if state.is_empty() {
           state = String::from_utf8(
-            self.get_transaction_data(&contract_transaction.id).await,
+            self.get_tx_data(&contract_transaction.id).await,
           )
           .unwrap();
         }
@@ -562,9 +533,7 @@ impl Arweave {
     cursor: Option<String>,
     variables: InteractionVariables,
   ) -> Vec<GQLTransactionsResultInterface> {
-    let mut stream = tokio_stream::iter(State::Next(cursor, variables));
-
-    tokio::spawn(|state| async move {
+    stream::unfold(State::Next(cursor, variables), |state| async move {
       match state {
         State::End => None,
         State::Next(cursor, variables) => {
@@ -594,9 +563,8 @@ impl Arweave {
         }
       }
     })
-
-    //.collect::<Vec<GQLTransactionsResultInterface>>()
-    //.await
+    .collect::<Vec<GQLTransactionsResultInterface>>()
+    .await
   }
 
   fn get_max_edges(&self, data: &[GQLEdgeInterface]) -> usize {
@@ -630,17 +598,18 @@ impl Arweave {
 #[cfg(test)]
 mod tests {
   use super::Arweave;
+  use crate::cron::arweave::cache::{ ArweaveCache, CacheExt };
 
   #[tokio::test]
   pub async fn test_build_host() {
     let arweave =
-      Arweave::new(80, String::from("arweave.net"), String::from("http"));
+      Arweave::new(80, String::from("arweave.net"), String::from("http"), ArweaveCache::new());
     assert_eq!(arweave.get_host(), "http://arweave.net");
     let arweave =
-      Arweave::new(443, String::from("arweave.net"), String::from("https"));
+      Arweave::new(443, String::from("arweave.net"), String::from("https"), ArweaveCache::new());
     assert_eq!(arweave.get_host(), "https://arweave.net:443");
     let arweave =
-      Arweave::new(500, String::from("arweave.net"), String::from("adksad"));
+      Arweave::new(500, String::from("arweave.net"), String::from("adksad"), ArweaveCache::new());
     assert_eq!(arweave.get_host(), "https://arweave.net:500");
   }
 }
