@@ -593,6 +593,7 @@ impl Arweave {
 
     Ok(!load_transactions.edges.is_empty())
   }
+
 }
 
 #[cfg(test)]

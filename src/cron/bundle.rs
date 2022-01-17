@@ -4,6 +4,8 @@ use bundlr_sdk::verify::{file::verify_file_bundle};
 use paris::error;
 use serde::{Deserialize, Serialize};
 use crate::types::Validator;
+use crate::cron::arweave::arweave::Arweave;
+use crate::cron::arweave::cache::{ ArweaveCache, CacheExt };
 use super::error::ValidatorCronError;
 
 #[derive(Default)]
@@ -37,7 +39,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     //let txs = get_txs(bundler, from_last_page, max_results);
     let txs = Vec::<Tx>::new();
 
-    let client = Client::default();
+    let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"), ArweaveCache::new());
 
     let response = client
         .get(format!("{}//{}", bundler.url, bundler.address))
