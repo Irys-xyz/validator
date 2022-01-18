@@ -6,7 +6,7 @@ use super::miscellaneous::get_contract_type;
 use super::miscellaneous::ContractType;
 use super::utils::decode_base_64;
 use super::error::AnyError;
-use awc::Client;
+use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -85,7 +85,7 @@ pub struct Arweave {
   pub host: String,
   pub port: i32,
   pub protocol: ArweaveProtocol,
-  client: Client,
+  client: reqwest::Client,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -411,9 +411,18 @@ impl Arweave {
     }
 
     let graphql_query = GraphqlQuery { query, variables };
+    let gql_json = serde_json::to_string(&graphql_query).unwrap();
 
     let req_url = format!("{}/graphql", self.get_host());
     println!("{:?}", req_url);
+
+    dbg!(self
+      .client
+      .post(&req_url)
+      .json(&graphql_query)
+      .send()
+    .await);
+
     let result = self
       .client
       .post(req_url)
