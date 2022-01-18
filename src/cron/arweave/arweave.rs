@@ -107,6 +107,7 @@ pub struct BlockFilter {
 #[serde(rename_all = "camelCase")]
 pub struct InteractionVariables {
   tags: Vec<TagFilter>,
+  owners: Vec<String>,
   block_filter: BlockFilter,
   first: usize,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -252,7 +253,11 @@ impl Arweave {
     }
 
     let variables = self
-      .get_default_gql_variables(contract_id.to_owned(), height_result)
+      .get_default_gql_variables(
+        vec![], 
+        Some(contract_id.to_owned()),
+        None,
+        height_result)
       .await;
 
     let mut final_result: Vec<GQLEdgeInterface> = Vec::new();
@@ -355,6 +360,143 @@ impl Arweave {
     ))
   }
 
+  pub async fn get_latest_transactions(
+    &self,
+    address: String,
+    app_name: String,
+    height: Option<usize>,
+    cache: bool
+  ) -> Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> {
+    let mut interactions: Option<Vec<GQLEdgeInterface>> = None;
+
+    let height_result = match height {
+      Some(size) => size,
+      None => self.get_network_info().await.height,
+    };
+
+    if cache {
+      if let Some(cache_interactions) = get_cache()
+        .lock()
+        .unwrap()
+        .find_interactions(address.to_owned())
+      {
+        if !cache_interactions.is_empty() {
+          if height.is_some() {
+            return Ok((cache_interactions, 0, false));
+          }
+          interactions = Some(cache_interactions);
+        }
+      }
+    }
+
+    let variables = self
+      .get_default_gql_variables(
+        vec![address.to_owned()],
+        None,
+        Some(app_name.to_owned()),
+        height_result)
+      .await;
+
+    let mut final_result: Vec<GQLEdgeInterface> = Vec::new();
+    let mut new_transactions = false;
+    let mut new_interactions_index: usize = 0;
+
+    if let Some(mut cache_interactions) = interactions {
+      let last_transaction_edge = cache_interactions.last().unwrap();
+      let has_more_from_last_interaction = self
+        .has_more(&variables, last_transaction_edge.cursor.to_owned())
+        .await?;
+
+      if has_more_from_last_interaction {
+        // Start from what's going to be the next interaction. if doing len - 1, that would mean we will also include the last interaction cached: not ideal.
+        new_interactions_index = cache_interactions.len();
+        let fetch_more_interactions = self
+          .stream_interactions(
+            Some(last_transaction_edge.cursor.to_owned()),
+            variables.to_owned(),
+          )
+          .await;
+
+        for result in fetch_more_interactions {
+          let mut new_tx_infos = result.edges.clone();
+          cache_interactions.append(&mut new_tx_infos);
+        }
+        new_transactions = true;
+      }
+
+      final_result.append(&mut cache_interactions);
+    } else {
+      let transactions = self
+        .get_next_interaction_page(variables.clone(), false, None)
+        .await?;
+
+      let mut tx_infos = transactions.edges.clone();
+
+      let mut cursor: Option<String> = None;
+      let max_edge = self.get_max_edges(&transactions.edges);
+      let maybe_edge = transactions.edges.get(max_edge);
+
+      if let Some(data) = maybe_edge {
+        let owned = data;
+        cursor = Some(owned.cursor.to_owned());
+      }
+
+      let results = self.stream_interactions(cursor, variables).await;
+
+      for result in results {
+        let mut new_tx_infos = result.edges.clone();
+        tx_infos.append(&mut new_tx_infos);
+      }
+
+      final_result.append(&mut tx_infos);
+      new_transactions = true;
+    }
+
+    let to_return: Vec<GQLEdgeInterface>;
+
+    if new_transactions {
+      let filtered: Vec<GQLEdgeInterface> = final_result
+        .into_iter()
+        .filter(|p| {
+          (p.node.parent.is_none())
+            || p
+              .node
+              .parent
+              .as_ref()
+              .unwrap_or(&GQLNodeParent { id: None })
+              .id
+              .is_none()
+            || (p.node.bundledIn.is_none())
+            || p
+              .node
+              .bundledIn
+              .as_ref()
+              .unwrap_or(&GQLBundled { id: None })
+              .id
+              .is_none()
+        })
+        .collect();
+
+      if cache {
+        get_cache()
+          .lock()
+          .unwrap()
+          .cache_interactions(address, &filtered);
+      }
+
+      to_return = filtered;
+    } else {
+      to_return = final_result;
+    }
+
+    let are_there_new_interactions = cache && new_transactions;
+    Ok((
+      to_return,
+      new_interactions_index,
+      are_there_new_interactions,
+    ))
+  } 
+
   async fn get_next_interaction_page(
     &self,
     mut variables: InteractionVariables,
@@ -363,32 +505,32 @@ impl Arweave {
   ) -> Result<GQLTransactionsResultInterface, AnyError> {
     let mut query = String::from(
       r#"query Transactions($tags: [TagFilter!]!, $blockFilter: BlockFilter!, $first: Int!, $after: String) {
-    transactions(tags: $tags, block: $blockFilter, first: $first, sort: HEIGHT_ASC, after: $after) {
-      pageInfo {
-        hasNextPage
-      }
-      edges {
-        node {
-          id
-          owner { address }
-          recipient
-          tags {
-            name
-            value
+        transactions(tags: $tags, block: $blockFilter, first: $first, sort: HEIGHT_ASC, after: $after) {
+          pageInfo {
+            hasNextPage
           }
-          block {
-            height
-            id
-            timestamp
+          edges {
+            node {
+              id
+              owner { address }
+              recipient
+              tags {
+                name
+                value
+              }
+              block {
+                height
+                id
+                timestamp
+              }
+              fee { winston }
+              quantity { winston }
+              parent { id }
+            }
+            cursor
           }
-          fee { winston }
-          quantity { winston }
-          parent { id }
         }
-        cursor
-      }
-    }
-  }"#,
+      }"#,
     );
 
     if from_last_page {
@@ -505,26 +647,41 @@ impl Arweave {
 
   async fn get_default_gql_variables(
     &self,
-    contract_id: String,
+    owners: Vec::<String>,
+    contract_id: Option<String>,
+    app_name: Option<String>,
     height: usize,
   ) -> InteractionVariables {
-    let app_name_tag: TagFilter = TagFilter {
-      name: "App-Name".to_owned(),
-      values: vec!["SmartWeaveAction".to_owned()],
+    let app_name_tag: TagFilter = match app_name {
+      Some(name) => TagFilter {
+        name: name.to_owned(),
+        values: vec!["binary".to_owned()],
+      },
+      None => TagFilter {
+        name: "App-Name".to_owned(),
+        values: vec!["SmartWeaveAction".to_owned()],
+      }
     };
 
-    let contract_tag: TagFilter = TagFilter {
-      name: "Contract".to_owned(),
-      values: vec![contract_id],
-    };
-
-    let variables: InteractionVariables = InteractionVariables {
-      tags: vec![app_name_tag, contract_tag],
-      block_filter: BlockFilter { max: height },
-      first: MAX_REQUEST,
-      after: None,
-    };
-
+    let variables: InteractionVariables = match contract_id {
+      Some(id) => InteractionVariables {
+        tags: vec![app_name_tag, TagFilter {
+          name: "Contract".to_owned(),
+          values: vec![id],
+        }],
+        owners: owners,
+        block_filter: BlockFilter { max: height },
+        first: MAX_REQUEST,
+        after: None,
+      },
+      None => InteractionVariables {
+        tags: vec![app_name_tag],
+        owners: owners,
+        block_filter: BlockFilter { max: height },
+        first: MAX_REQUEST,
+        after: None,
+      }
+    }; 
     variables
   }
 
@@ -593,7 +750,6 @@ impl Arweave {
 
     Ok(!load_transactions.edges.is_empty())
   }
-
 }
 
 #[cfg(test)]

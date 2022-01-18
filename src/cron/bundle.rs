@@ -3,6 +3,8 @@ use awc::Client;
 use bundlr_sdk::verify::{file::verify_file_bundle};
 use paris::error;
 use serde::{Deserialize, Serialize};
+use super::arweave::gql_result::{GQLEdgeInterface};
+use super::arweave::error::AnyError;
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use crate::cron::arweave::cache::{ ArweaveCache, CacheExt };
@@ -41,11 +43,35 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"), ArweaveCache::new());
 
+    println!("Arweave config: {}, {}", arweave.host, arweave.port);
+    println!("Bundler config: {}, {}", bundler.address, bundler.url);
+    let transactions: Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> =
+      arweave
+      .get_latest_transactions(
+        bundler.address,
+        String::from("Bundle-Format"),
+        None,
+        false)
+      .await;
+
+    let (
+      result_transactions,
+      new_transaction_index,
+      are_there_new_transactions,
+    ) = transactions?;
+
+    let mut transactions = result_transactions;
+
+    for tx in transactions {
+      println!("{}", tx.node.owner.address);
+    }
+
+    /*
     let response = client
         .get(format!("{}//{}", bundler.url, bundler.address))
         .send()
         .await;
-
+    */
 
     // For each tx see if I or my peers have the tx in their db
     for tx in txs {
