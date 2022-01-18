@@ -6,12 +6,15 @@ use super::miscellaneous::get_contract_type;
 use super::miscellaneous::ContractType;
 use super::utils::decode_base_64;
 use super::error::AnyError;
-use reqwest::Client;
+use reqwest;
+use reqwest::{ Client, Body };
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::iter::Iterator;
 use futures::{ stream, StreamExt };
+use graphql_client::{GraphQLQuery, Response};
+use std::error::Error;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -111,11 +114,13 @@ pub struct InteractionVariables {
   after: Option<String>,
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct GraphqlQuery {
-  query: String,
-  variables: InteractionVariables,
-}
+#[derive(GraphQLQuery)]
+#[graphql(
+  schema_path = "graphql/transactions.schema.graphql",
+  query_path = "graphql/transactions.query.graphql",
+  response_derives = "Debug",
+)]
+pub struct UnionQuery;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct LoadedContract {
@@ -410,8 +415,12 @@ impl Arweave {
       variables.first = max_results.unwrap_or(100);
     }
 
+    let request_body = UnionQuery::build_query(variables);
+
+    /*
     let graphql_query = GraphqlQuery { query, variables };
-    let gql_json = serde_json::to_string(&graphql_query).unwrap();
+    let gql_json : String = serde_json::to_string(&graphql_query).unwrap();
+    */
 
     let req_url = format!("{}/graphql", self.get_host());
     println!("{:?}", req_url);
@@ -419,14 +428,14 @@ impl Arweave {
     dbg!(self
       .client
       .post(&req_url)
-      .json(&graphql_query)
+      .json(&request_body)
       .send()
     .await);
 
     let result = self
       .client
       .post(req_url)
-      .json(&graphql_query)
+      .json(&request_body)
       .send()
       .await
       .unwrap();
