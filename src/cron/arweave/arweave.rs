@@ -1,4 +1,3 @@
-use super::cache::CacheExt;
 use super::gql_result::GQLNodeParent;
 use super::gql_result::GQLResultInterface;
 use super::gql_result::GQLTransactionsResultInterface;
@@ -7,13 +6,10 @@ use super::miscellaneous::get_contract_type;
 use super::miscellaneous::ContractType;
 use super::utils::decode_base_64;
 use super::error::AnyError;
-use once_cell::sync::OnceCell;
-use reqwest::Client;
+use awc::Client;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::iter::Iterator;
 use futures::{ stream, StreamExt };
 
@@ -140,20 +136,9 @@ enum State {
 
 pub static MAX_REQUEST: usize = 100;
 
-static ARWEAVE_CACHE: OnceCell<Arc<Mutex<dyn CacheExt + Send + Sync>>> =
-  OnceCell::new();
-
-pub fn get_cache() -> &'static Arc<Mutex<dyn CacheExt + Send + Sync>> {
-  ARWEAVE_CACHE.get().expect("cache is not initialized")
-}
 
 impl Arweave {
-  pub fn new<T>(port: i32, host: String, protocol: String, cache: T) -> Arweave
-  where
-    T: CacheExt + Send + Sync + Debug + 'static,
-  {
-    ARWEAVE_CACHE.set(Arc::new(Mutex::new(cache))).unwrap();
-
+  pub fn new(port: i32, host: String, protocol: String) -> Arweave {
     Arweave {
       port,
       host,
@@ -228,29 +213,13 @@ impl Arweave {
     &self,
     contract_id: String,
     height: Option<usize>,
-    cache: bool,
   ) -> Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> {
-    let mut interactions: Option<Vec<GQLEdgeInterface>> = None;
+    let interactions: Option<Vec<GQLEdgeInterface>> = None;
 
     let height_result = match height {
       Some(size) => size,
       None => self.get_network_info().await.height,
     };
-
-    if cache {
-      if let Some(cache_interactions) = get_cache()
-        .lock()
-        .unwrap()
-        .find_interactions(contract_id.to_owned())
-      {
-        if !cache_interactions.is_empty() {
-          if height.is_some() {
-            return Ok((cache_interactions, 0, false));
-          }
-          interactions = Some(cache_interactions);
-        }
-      }
-    }
 
     let variables = self
       .get_default_gql_variables(
@@ -261,101 +230,61 @@ impl Arweave {
       .await;
 
     let mut final_result: Vec<GQLEdgeInterface> = Vec::new();
-    let mut new_transactions = false;
-    let mut new_interactions_index: usize = 0;
 
-    if let Some(mut cache_interactions) = interactions {
-      let last_transaction_edge = cache_interactions.last().unwrap();
-      let has_more_from_last_interaction = self
-        .has_more(&variables, last_transaction_edge.cursor.to_owned())
-        .await?;
+    let transactions = self
+      .get_next_interaction_page(variables.clone(), false, None)
+      .await?;
 
-      if has_more_from_last_interaction {
-        // Start from what's going to be the next interaction. if doing len - 1, that would mean we will also include the last interaction cached: not ideal.
-        new_interactions_index = cache_interactions.len();
-        let fetch_more_interactions = self
-          .stream_interactions(
-            Some(last_transaction_edge.cursor.to_owned()),
-            variables.to_owned(),
-          )
-          .await;
+    let mut tx_infos = transactions.edges.clone();
 
-        for result in fetch_more_interactions {
-          let mut new_tx_infos = result.edges.clone();
-          cache_interactions.append(&mut new_tx_infos);
-        }
-        new_transactions = true;
-      }
+    let mut cursor: Option<String> = None;
+    let max_edge = self.get_max_edges(&transactions.edges);
+    let maybe_edge = transactions.edges.get(max_edge);
 
-      final_result.append(&mut cache_interactions);
-    } else {
-      let transactions = self
-        .get_next_interaction_page(variables.clone(), false, None)
-        .await?;
-
-      let mut tx_infos = transactions.edges.clone();
-
-      let mut cursor: Option<String> = None;
-      let max_edge = self.get_max_edges(&transactions.edges);
-      let maybe_edge = transactions.edges.get(max_edge);
-
-      if let Some(data) = maybe_edge {
-        let owned = data;
-        cursor = Some(owned.cursor.to_owned());
-      }
-
-      let results = self.stream_interactions(cursor, variables).await;
-
-      for result in results {
-        let mut new_tx_infos = result.edges.clone();
-        tx_infos.append(&mut new_tx_infos);
-      }
-
-      final_result.append(&mut tx_infos);
-      new_transactions = true;
+    if let Some(data) = maybe_edge {
+      let owned = data;
+      cursor = Some(owned.cursor.to_owned());
     }
+
+    let results = self.stream_interactions(cursor, variables).await;
+
+    for result in results {
+      let mut new_tx_infos = result.edges.clone();
+      tx_infos.append(&mut new_tx_infos);
+    }
+
+    final_result.append(&mut tx_infos);
 
     let to_return: Vec<GQLEdgeInterface>;
 
-    if new_transactions {
-      let filtered: Vec<GQLEdgeInterface> = final_result
-        .into_iter()
-        .filter(|p| {
-          (p.node.parent.is_none())
-            || p
-              .node
-              .parent
-              .as_ref()
-              .unwrap_or(&GQLNodeParent { id: None })
-              .id
-              .is_none()
-            || (p.node.bundledIn.is_none())
-            || p
-              .node
-              .bundledIn
-              .as_ref()
-              .unwrap_or(&GQLBundled { id: None })
-              .id
-              .is_none()
-        })
-        .collect();
+    let filtered: Vec<GQLEdgeInterface> = final_result
+      .into_iter()
+      .filter(|p| {
+        (p.node.parent.is_none())
+          || p
+            .node
+            .parent
+            .as_ref()
+            .unwrap_or(&GQLNodeParent { id: None })
+            .id
+            .is_none()
+          || (p.node.bundledIn.is_none())
+          || p
+            .node
+            .bundledIn
+            .as_ref()
+            .unwrap_or(&GQLBundled { id: None })
+            .id
+            .is_none()
+      })
+      .collect();
 
-      if cache {
-        get_cache()
-          .lock()
-          .unwrap()
-          .cache_interactions(contract_id, &filtered);
-      }
+    to_return = filtered;
 
-      to_return = filtered;
-    } else {
-      to_return = final_result;
-    }
-
-    let are_there_new_interactions = cache && new_transactions;
+    let are_there_new_interactions = false;
     Ok((
       to_return,
-      new_interactions_index,
+      0,
       are_there_new_interactions,
     ))
   }
@@ -365,29 +294,12 @@ impl Arweave {
     address: String,
     app_name: String,
     height: Option<usize>,
-    cache: bool
   ) -> Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> {
-    let mut interactions: Option<Vec<GQLEdgeInterface>> = None;
 
     let height_result = match height {
       Some(size) => size,
       None => self.get_network_info().await.height,
     };
-
-    if cache {
-      if let Some(cache_interactions) = get_cache()
-        .lock()
-        .unwrap()
-        .find_interactions(address.to_owned())
-      {
-        if !cache_interactions.is_empty() {
-          if height.is_some() {
-            return Ok((cache_interactions, 0, false));
-          }
-          interactions = Some(cache_interactions);
-        }
-      }
-    }
 
     let variables = self
       .get_default_gql_variables(
@@ -398,101 +310,61 @@ impl Arweave {
       .await;
 
     let mut final_result: Vec<GQLEdgeInterface> = Vec::new();
-    let mut new_transactions = false;
-    let mut new_interactions_index: usize = 0;
 
-    if let Some(mut cache_interactions) = interactions {
-      let last_transaction_edge = cache_interactions.last().unwrap();
-      let has_more_from_last_interaction = self
-        .has_more(&variables, last_transaction_edge.cursor.to_owned())
-        .await?;
+    let transactions = self
+      .get_next_interaction_page(variables.clone(), false, None)
+      .await?;
 
-      if has_more_from_last_interaction {
-        // Start from what's going to be the next interaction. if doing len - 1, that would mean we will also include the last interaction cached: not ideal.
-        new_interactions_index = cache_interactions.len();
-        let fetch_more_interactions = self
-          .stream_interactions(
-            Some(last_transaction_edge.cursor.to_owned()),
-            variables.to_owned(),
-          )
-          .await;
+    let mut tx_infos = transactions.edges.clone();
 
-        for result in fetch_more_interactions {
-          let mut new_tx_infos = result.edges.clone();
-          cache_interactions.append(&mut new_tx_infos);
-        }
-        new_transactions = true;
-      }
+    let mut cursor: Option<String> = None;
+    let max_edge = self.get_max_edges(&transactions.edges);
+    let maybe_edge = transactions.edges.get(max_edge);
 
-      final_result.append(&mut cache_interactions);
-    } else {
-      let transactions = self
-        .get_next_interaction_page(variables.clone(), false, None)
-        .await?;
-
-      let mut tx_infos = transactions.edges.clone();
-
-      let mut cursor: Option<String> = None;
-      let max_edge = self.get_max_edges(&transactions.edges);
-      let maybe_edge = transactions.edges.get(max_edge);
-
-      if let Some(data) = maybe_edge {
-        let owned = data;
-        cursor = Some(owned.cursor.to_owned());
-      }
-
-      let results = self.stream_interactions(cursor, variables).await;
-
-      for result in results {
-        let mut new_tx_infos = result.edges.clone();
-        tx_infos.append(&mut new_tx_infos);
-      }
-
-      final_result.append(&mut tx_infos);
-      new_transactions = true;
+    if let Some(data) = maybe_edge {
+      let owned = data;
+      cursor = Some(owned.cursor.to_owned());
     }
+
+    let results = self.stream_interactions(cursor, variables).await;
+
+    for result in results {
+      let mut new_tx_infos = result.edges.clone();
+      tx_infos.append(&mut new_tx_infos);
+    }
+
+    final_result.append(&mut tx_infos);
 
     let to_return: Vec<GQLEdgeInterface>;
 
-    if new_transactions {
-      let filtered: Vec<GQLEdgeInterface> = final_result
-        .into_iter()
-        .filter(|p| {
-          (p.node.parent.is_none())
-            || p
-              .node
-              .parent
-              .as_ref()
-              .unwrap_or(&GQLNodeParent { id: None })
-              .id
-              .is_none()
-            || (p.node.bundledIn.is_none())
-            || p
-              .node
-              .bundledIn
-              .as_ref()
-              .unwrap_or(&GQLBundled { id: None })
-              .id
-              .is_none()
-        })
-        .collect();
+    let filtered: Vec<GQLEdgeInterface> = final_result
+      .into_iter()
+      .filter(|p| {
+        (p.node.parent.is_none())
+          || p
+            .node
+            .parent
+            .as_ref()
+            .unwrap_or(&GQLNodeParent { id: None })
+            .id
+            .is_none()
+          || (p.node.bundledIn.is_none())
+          || p
+            .node
+            .bundledIn
+            .as_ref()
+            .unwrap_or(&GQLBundled { id: None })
+            .id
+            .is_none()
+      })
+      .collect();
 
-      if cache {
-        get_cache()
-          .lock()
-          .unwrap()
-          .cache_interactions(address, &filtered);
-      }
+    to_return = filtered;
 
-      to_return = filtered;
-    } else {
-      to_return = final_result;
-    }
-
-    let are_there_new_interactions = cache && new_transactions;
+    let are_there_new_interactions = false;
     Ok((
       to_return,
-      new_interactions_index,
+      0,
       are_there_new_interactions,
     ))
   } 
@@ -541,6 +413,7 @@ impl Arweave {
     let graphql_query = GraphqlQuery { query, variables };
 
     let req_url = format!("{}/graphql", self.get_host());
+    println!("{:?}", req_url);
     let result = self
       .client
       .post(req_url)
@@ -548,9 +421,10 @@ impl Arweave {
       .send()
       .await
       .unwrap();
-
+      
+    println!("{:?}", result);
     let data = result.json::<GQLResultInterface>().await?;
-
+      
     Ok(data.data.transactions)
   }
 
@@ -559,16 +433,8 @@ impl Arweave {
     contract_id: String,
     contract_src_tx_id: Option<String>,
     contract_type: Option<String>,
-    cache: bool,
   ) -> Result<LoadedContract, AnyError> {
     let mut result: Option<LoadedContract> = None;
-
-    if cache {
-      result = get_cache()
-        .lock()
-        .unwrap()
-        .find_contract(contract_id.to_owned());
-    }
 
     if result.is_some() {
       Ok(result.unwrap())
@@ -623,10 +489,6 @@ impl Arweave {
         min_fee,
         contract_transaction,
       };
-
-      if cache {
-        get_cache().lock().unwrap().cache_contract(&final_result);
-      }
 
       Ok(final_result)
     }
@@ -755,18 +617,17 @@ impl Arweave {
 #[cfg(test)]
 mod tests {
   use super::Arweave;
-  use crate::cron::arweave::cache::{ ArweaveCache, CacheExt };
 
   #[tokio::test]
   pub async fn test_build_host() {
     let arweave =
-      Arweave::new(80, String::from("arweave.net"), String::from("http"), ArweaveCache::new());
+      Arweave::new(80, String::from("arweave.net"), String::from("http"));
     assert_eq!(arweave.get_host(), "http://arweave.net");
     let arweave =
-      Arweave::new(443, String::from("arweave.net"), String::from("https"), ArweaveCache::new());
+      Arweave::new(443, String::from("arweave.net"), String::from("https"));
     assert_eq!(arweave.get_host(), "https://arweave.net:443");
     let arweave =
-      Arweave::new(500, String::from("arweave.net"), String::from("adksad"), ArweaveCache::new());
+      Arweave::new(500, String::from("arweave.net"), String::from("adksad"));
     assert_eq!(arweave.get_host(), "https://arweave.net:500");
   }
 }

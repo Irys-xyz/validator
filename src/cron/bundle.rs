@@ -7,7 +7,6 @@ use super::arweave::gql_result::{GQLEdgeInterface};
 use super::arweave::error::AnyError;
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
-use crate::cron::arweave::cache::{ ArweaveCache, CacheExt };
 use super::error::ValidatorCronError;
 
 #[derive(Default)]
@@ -41,17 +40,10 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     //let txs = get_txs(bundler, from_last_page, max_results);
     let txs = Vec::<Tx>::new();
 
-    let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"), ArweaveCache::new());
-
-    println!("Arweave config: {}, {}", arweave.host, arweave.port);
-    println!("Bundler config: {}, {}", bundler.address, bundler.url);
+    let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
     let transactions: Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> =
       arweave
-      .get_latest_transactions(
-        bundler.address,
-        String::from("Bundle-Format"),
-        None,
-        false)
+      .get_interactions(String::from("TnReipqbYORtHfuOiWKftmn0m4OYDBpwsCckyv7psio"), None)
       .await;
 
     let (
