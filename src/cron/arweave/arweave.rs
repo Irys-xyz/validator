@@ -1,11 +1,11 @@
-use super::miscellaneous::ContractType;
+use super::error::ArweaveError;
 use super::error::AnyError;
 use reqwest::Client;
+use reqwest::blocking::Response;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::iter::Iterator;
-use graphql_client::{ GraphQLQuery, Response };
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -27,27 +27,54 @@ pub struct Tag {
 }
 
 #[derive(Deserialize, Serialize, Default, Clone)]
-pub struct TransactionData {
-  pub format: usize,
-  pub id: String,
-  pub last_tx: String,
-  pub owner: String,
-  pub tags: Vec<Tag>,
-  pub target: String,
-  pub quantity: String,
-  pub data: String,
-  pub reward: String,
-  pub signature: String,
-  pub data_size: String,
-  pub data_root: String,
+pub struct Owner {
+  address: String,
+}
+
+#[derive(Deserialize, Serialize, Default, Clone)]
+pub struct Fee {
+  winston: u64
+}
+
+#[derive(Deserialize, Serialize, Default, Clone)]
+pub struct BlockData {
+  size: u64,
+  r#type: String,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone)]
 pub struct BlockInfo {
+  pub id: String,
   pub timestamp: u64,
-  pub diff: String,
-  pub indep_hash: String,
   pub height: u64,
+}
+
+#[derive(Deserialize, Serialize, Default, Clone)]
+pub struct TransactionData {
+  pub id: String,
+  pub owner: Owner,
+  pub signature: String,
+  pub recipient: String,
+  pub tags: Vec<Tag>,
+  pub block: Option<BlockInfo>,
+  pub fee: Fee,
+  pub quantity: Fee,
+  pub data: BlockData
+}
+
+#[derive(Deserialize, Serialize, Default, Clone)]
+pub struct GraphqlEdges {
+  pub edges: Vec<TransactionData>
+}
+
+#[derive(Deserialize, Serialize, Default, Clone)]
+pub struct TransactionsGqlResponse {
+  pub transactions: GraphqlEdges,
+}
+
+#[derive(Deserialize, Serialize, Default, Clone)]
+pub struct GraphqlQueryResponse {
+  pub data: TransactionsGqlResponse,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone)]
@@ -81,60 +108,6 @@ pub struct Arweave {
   pub protocol: ArweaveProtocol,
   client: reqwest::Client,
 }
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct TagFilter {
-  name: String,
-  values: Vec<String>,
-}
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct BlockFilter {
-  max: usize,
-}
-
-#[derive(Deserialize, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct InteractionVariables {
-  tags: Vec<TagFilter>,
-  owners: Vec<String>,
-  block_filter: BlockFilter,
-  first: usize,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  #[serde(default)]
-  after: Option<String>,
-}
-
-#[allow(clippy::upper_case_acronyms)]
-type URI = String;
-
-#[derive(GraphQLQuery)]
-#[graphql(
-  schema_path = "graphql/schema.graphql",
-  query_path = "graphql/query.graphql",
-  response_derives = "Debug"
-)]
-struct TransactionsView;
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct LoadedContract {
-  pub id: String,
-  pub contract_src_tx_id: String,
-  pub contract_src: Vec<u8>,
-  pub contract_type: ContractType,
-  pub init_state: String,
-  pub min_fee: Option<String>,
-  pub contract_transaction: TransactionData,
-}
-
-enum State {
-  Next(Option<String>, InteractionVariables),
-  #[allow(dead_code)]
-  End,
-}
-
-pub static MAX_REQUEST: usize = 100;
-
 
 impl Arweave {
   pub fn new(port: i32, host: String, protocol: String) -> Arweave {
@@ -211,24 +184,66 @@ impl Arweave {
   pub async fn get_latest_transactions(
     &self,
     owner: String
-  ) -> Result<(), AnyError> {
-    let request_body = 
-      TransactionsView::build_query(transactions_view::Variables { owner });
-    let url = format!("{}/graphql", self.get_host());
+  ) -> Result<Response, ArweaveError> {
 
-    let mut res = 
-      self
-      .client
+    let raw_query = format!("
+      query {{
+        transactions(owners:[\"{}\"]) {{
+          edges {{
+            node {{
+              id
+              owner {{ address }}
+              recipient
+              tags {{
+                name
+                value
+              }}
+              block {{
+                height
+                id
+                timestamp
+              }}
+              fee {{ winston }}
+              quantity {{ winston }}
+              parent {{ id }}
+              data {{
+                size
+                type
+              }}
+            }}
+          }}
+        }}
+      }}",
+      owner
+    );
+
+    /*
+    let query = 
+    TransactionsView::build_query(
+      transactions_view::Variables { 
+        owner: String::from("u-x-xjbD0RDR1RaBOtZAGdSq7TZynpl9UUYcvsnvnJo") 
+      });
+    let json_query = serde_json::to_string(&query.query).unwrap();
+    let json_variables = serde_json::to_string(&query.variables).unwrap();
+    */
+
+    let url = format!("{}/graphql?query={}", self.get_host(), raw_query);
+    let client = reqwest::Client::new();
+
+    let res = 
+      client
       .post(&url)
-      .json(&request_body)
       .send()
-      .await?;
+      .await;
 
-    let response_body: Response<transactions_view::ResponseData> = res.json().await?;
+    /*
+    if res.is_ok() {
+      Ok(res.unwrap().json().await);
+    }
+    */
+    dbg!("{}", res.unwrap().text().await);
 
-    dbg!(&response_body);
-
-    Ok(())
+    Err(ArweaveError::TxNotFound)
   } 
 
   fn get_host(&self) -> String {

@@ -41,13 +41,10 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     let txs = Vec::<Tx>::new();
 
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
-    let transactions: Result<(), AnyError> =
+    let transactions =
       arweave
       .get_latest_transactions(String::from("OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"))
       .await;
-
-    dbg!("{}", transactions);
-
 
     for tx in &txs {
       println!("{:?}", tx.id);

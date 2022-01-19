@@ -16,7 +16,7 @@ pub async fn run_crons() {
     info!("Validator starting ...");
     join!(
         create_cron("update contract", contract::update_contract, 30),
-        create_cron("validate bundler", validate::validate, 2 * 60)
+        create_cron("validate bundler", validate::validate, 1 * 10)
     );
 }
 
