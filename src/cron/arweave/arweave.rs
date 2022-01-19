@@ -1,7 +1,6 @@
 use super::error::ArweaveError;
 use super::error::AnyError;
 use reqwest::Client;
-use reqwest::blocking::Response;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -26,35 +25,35 @@ pub struct Tag {
   pub value: String,
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct Owner {
   address: String,
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct Fee {
-  winston: u64
+  winston: String
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct BlockData {
-  size: u64,
-  r#type: String,
+  size: String,
+  r#type: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct BlockInfo {
   pub id: String,
   pub timestamp: u64,
   pub height: u64,
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct TransactionData {
   pub id: String,
   pub owner: Owner,
   pub signature: String,
-  pub recipient: String,
+  pub recipient: Option<String>,
   pub tags: Vec<Tag>,
   pub block: Option<BlockInfo>,
   pub fee: Fee,
@@ -62,17 +61,22 @@ pub struct TransactionData {
   pub data: BlockData
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
-pub struct GraphqlEdges {
-  pub edges: Vec<TransactionData>
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
+pub struct GraphqlNodes {
+  pub node: TransactionData
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
+pub struct GraphqlEdges {
+  pub edges: Vec<GraphqlNodes>
+}
+
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct TransactionsGqlResponse {
   pub transactions: GraphqlEdges,
 }
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct GraphqlQueryResponse {
   pub data: TransactionsGqlResponse,
 }
@@ -184,7 +188,7 @@ impl Arweave {
   pub async fn get_latest_transactions(
     &self,
     owner: String
-  ) -> Result<Response, ArweaveError> {
+  ) -> Result<GraphqlQueryResponse, ArweaveError> {
 
     let raw_query = format!("
       query {{
@@ -193,6 +197,7 @@ impl Arweave {
             node {{
               id
               owner {{ address }}
+              signature
               recipient
               tags {{
                 name
@@ -205,7 +210,6 @@ impl Arweave {
               }}
               fee {{ winston }}
               quantity {{ winston }}
-              parent {{ id }}
               data {{
                 size
                 type
@@ -241,7 +245,11 @@ impl Arweave {
       Ok(res.unwrap().json().await);
     }
     */
-    dbg!("{}", res.unwrap().text().await);
+    //dbg!("{}", res.unwrap().text().await);
+    let mut res = res.unwrap().json::<GraphqlQueryResponse>().await;
+    dbg!("{}", res);
+
+
 
     Err(ArweaveError::TxNotFound)
   } 
