@@ -41,21 +41,16 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     let txs = Vec::<Tx>::new();
 
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
-    let transactions: Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> =
+    let transactions: Result<(), AnyError> =
       arweave
-      .get_interactions(String::from("TnReipqbYORtHfuOiWKftmn0m4OYDBpwsCckyv7psio"), None)
+      .get_latest_transactions(String::from("OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"))
       .await;
 
-    let (
-      result_transactions,
-      new_transaction_index,
-      are_there_new_transactions,
-    ) = transactions?;
+    dbg!("{}", transactions);
 
-    let mut transactions = result_transactions;
 
-    for tx in transactions {
-      println!("{}", tx.node.owner.address);
+    for tx in &txs {
+      println!("{:?}", tx.id);
     }
 
     /*

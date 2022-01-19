@@ -1,20 +1,11 @@
-use super::gql_result::GQLNodeParent;
-use super::gql_result::GQLResultInterface;
-use super::gql_result::GQLTransactionsResultInterface;
-use super::gql_result::{GQLBundled, GQLEdgeInterface};
-use super::miscellaneous::get_contract_type;
 use super::miscellaneous::ContractType;
-use super::utils::decode_base_64;
 use super::error::AnyError;
-use reqwest;
-use reqwest::{ Client, Body };
+use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::iter::Iterator;
-use futures::{ stream, StreamExt };
-use graphql_client::{GraphQLQuery, Response};
-use std::error::Error;
+use graphql_client::{ GraphQLQuery, Response };
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -114,13 +105,16 @@ pub struct InteractionVariables {
   after: Option<String>,
 }
 
+#[allow(clippy::upper_case_acronyms)]
+type URI = String;
+
 #[derive(GraphQLQuery)]
 #[graphql(
-  schema_path = "graphql/transactions.schema.graphql",
-  query_path = "graphql/transactions.query.graphql",
-  response_derives = "Debug",
+  schema_path = "graphql/schema.graphql",
+  query_path = "graphql/query.graphql",
+  response_derives = "Debug"
 )]
-pub struct UnionQuery;
+struct TransactionsView;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct LoadedContract {
@@ -214,303 +208,28 @@ impl Arweave {
     info
   }
 
-  pub async fn get_interactions(
-    &self,
-    contract_id: String,
-    height: Option<usize>,
-  ) -> Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> {
-    let interactions: Option<Vec<GQLEdgeInterface>> = None;
-
-    let height_result = match height {
-      Some(size) => size,
-      None => self.get_network_info().await.height,
-    };
-
-    let variables = self
-      .get_default_gql_variables(
-        vec![], 
-        Some(contract_id.to_owned()),
-        None,
-        height_result)
-      .await;
-
-    let mut final_result: Vec<GQLEdgeInterface> = Vec::new();
-
-    let transactions = self
-      .get_next_interaction_page(variables.clone(), false, None)
-      .await?;
-
-    let mut tx_infos = transactions.edges.clone();
-
-    let mut cursor: Option<String> = None;
-    let max_edge = self.get_max_edges(&transactions.edges);
-    let maybe_edge = transactions.edges.get(max_edge);
-
-    if let Some(data) = maybe_edge {
-      let owned = data;
-      cursor = Some(owned.cursor.to_owned());
-    }
-
-    let results = self.stream_interactions(cursor, variables).await;
-
-    for result in results {
-      let mut new_tx_infos = result.edges.clone();
-      tx_infos.append(&mut new_tx_infos);
-    }
-
-    final_result.append(&mut tx_infos);
-
-    let to_return: Vec<GQLEdgeInterface>;
-
-    let filtered: Vec<GQLEdgeInterface> = final_result
-      .into_iter()
-      .filter(|p| {
-        (p.node.parent.is_none())
-          || p
-            .node
-            .parent
-            .as_ref()
-            .unwrap_or(&GQLNodeParent { id: None })
-            .id
-            .is_none()
-          || (p.node.bundledIn.is_none())
-          || p
-            .node
-            .bundledIn
-            .as_ref()
-            .unwrap_or(&GQLBundled { id: None })
-            .id
-            .is_none()
-      })
-      .collect();
-
-    to_return = filtered;
-
-    let are_there_new_interactions = false;
-    Ok((
-      to_return,
-      0,
-      are_there_new_interactions,
-    ))
-  }
-
   pub async fn get_latest_transactions(
     &self,
-    address: String,
-    app_name: String,
-    height: Option<usize>,
-  ) -> Result<(Vec<GQLEdgeInterface>, usize, bool), AnyError> {
+    owner: String
+  ) -> Result<(), AnyError> {
+    let request_body = 
+      TransactionsView::build_query(transactions_view::Variables { owner });
+    let url = format!("{}/graphql", self.get_host());
 
-    let height_result = match height {
-      Some(size) => size,
-      None => self.get_network_info().await.height,
-    };
-
-    let variables = self
-      .get_default_gql_variables(
-        vec![address.to_owned()],
-        None,
-        Some(app_name.to_owned()),
-        height_result)
-      .await;
-
-    let mut final_result: Vec<GQLEdgeInterface> = Vec::new();
-
-    let transactions = self
-      .get_next_interaction_page(variables.clone(), false, None)
+    let mut res = 
+      self
+      .client
+      .post(&url)
+      .json(&request_body)
+      .send()
       .await?;
 
-    let mut tx_infos = transactions.edges.clone();
+    let response_body: Response<transactions_view::ResponseData> = res.json().await?;
 
-    let mut cursor: Option<String> = None;
-    let max_edge = self.get_max_edges(&transactions.edges);
-    let maybe_edge = transactions.edges.get(max_edge);
+    dbg!(&response_body);
 
-    if let Some(data) = maybe_edge {
-      let owned = data;
-      cursor = Some(owned.cursor.to_owned());
-    }
-
-    let results = self.stream_interactions(cursor, variables).await;
-
-    for result in results {
-      let mut new_tx_infos = result.edges.clone();
-      tx_infos.append(&mut new_tx_infos);
-    }
-
-    final_result.append(&mut tx_infos);
-
-    let to_return: Vec<GQLEdgeInterface>;
-
-    let filtered: Vec<GQLEdgeInterface> = final_result
-      .into_iter()
-      .filter(|p| {
-        (p.node.parent.is_none())
-          || p
-            .node
-            .parent
-            .as_ref()
-            .unwrap_or(&GQLNodeParent { id: None })
-            .id
-            .is_none()
-          || (p.node.bundledIn.is_none())
-          || p
-            .node
-            .bundledIn
-            .as_ref()
-            .unwrap_or(&GQLBundled { id: None })
-            .id
-            .is_none()
-      })
-      .collect();
-
-    to_return = filtered;
-
-    let are_there_new_interactions = false;
-    Ok((
-      to_return,
-      0,
-      are_there_new_interactions,
-    ))
+    Ok(())
   } 
-
-  async fn get_next_interaction_page(
-    &self,
-    mut variables: InteractionVariables,
-    from_last_page: bool,
-    max_results: Option<usize>,
-  ) -> Result<GQLTransactionsResultInterface, AnyError> {
-    let mut query = String::from(
-      r#"query Transactions($tags: [TagFilter!]!, $blockFilter: BlockFilter!, $first: Int!, $after: String) {
-        transactions(tags: $tags, block: $blockFilter, first: $first, sort: HEIGHT_ASC, after: $after) {
-          pageInfo {
-            hasNextPage
-          }
-          edges {
-            node {
-              id
-              owner { address }
-              recipient
-              tags {
-                name
-                value
-              }
-              block {
-                height
-                id
-                timestamp
-              }
-              fee { winston }
-              quantity { winston }
-              parent { id }
-            }
-            cursor
-          }
-        }
-      }"#,
-    );
-
-    if from_last_page {
-      query = query.replace("HEIGHT_ASC", "HEIGHT_DESC");
-      variables.first = max_results.unwrap_or(100);
-    }
-
-    let request_body = UnionQuery::build_query(variables);
-
-    /*
-    let graphql_query = GraphqlQuery { query, variables };
-    let gql_json : String = serde_json::to_string(&graphql_query).unwrap();
-    */
-
-    let req_url = format!("{}/graphql", self.get_host());
-    println!("{:?}", req_url);
-
-    dbg!(self
-      .client
-      .post(&req_url)
-      .json(&request_body)
-      .send()
-    .await);
-
-    let result = self
-      .client
-      .post(req_url)
-      .json(&request_body)
-      .send()
-      .await
-      .unwrap();
-      
-    println!("{:?}", result);
-    let data = result.json::<GQLResultInterface>().await?;
-      
-    Ok(data.data.transactions)
-  }
-
-  pub async fn load_contract(
-    &self,
-    contract_id: String,
-    contract_src_tx_id: Option<String>,
-    contract_type: Option<String>,
-  ) -> Result<LoadedContract, AnyError> {
-    let mut result: Option<LoadedContract> = None;
-
-    if result.is_some() {
-      Ok(result.unwrap())
-    } else {
-      let contract_transaction = self.get_tx(&contract_id).await?;
-
-      let contract_src = contract_src_tx_id
-        .or_else(|| contract_transaction.get_tag("Contract-Src").ok())
-        .ok_or_else(|| {
-          AnyError::msg("Contract-Src tag not found in transaction")
-        })?;
-
-      let min_fee = contract_transaction.get_tag("Min-Fee").ok();
-
-      let contract_src_tx = self.get_tx(&contract_src).await?;
-
-      let contract_src_data =
-        self.get_tx_data(&contract_src_tx.id).await;
-
-      let mut state: String;
-
-      if let Ok(init_state_tag) = contract_transaction.get_tag("Init-State") {
-        state = init_state_tag;
-      } else if let Ok(init_state_tag_txid) =
-        contract_transaction.get_tag("Init-State-TX")
-      {
-        let init_state_tx = self.get_tx(&init_state_tag_txid).await?;
-        state = decode_base_64(init_state_tx.data);
-      } else {
-        state = decode_base_64(contract_transaction.data.to_owned());
-
-        if state.is_empty() {
-          state = String::from_utf8(
-            self.get_tx_data(&contract_transaction.id).await,
-          )
-          .unwrap();
-        }
-      }
-
-      let contract_type = get_contract_type(
-        contract_type,
-        &contract_transaction,
-        &contract_src_tx,
-      )?;
-
-      let final_result = LoadedContract {
-        id: contract_id,
-        contract_src_tx_id: contract_src,
-        contract_src: contract_src_data,
-        contract_type,
-        init_state: state,
-        min_fee,
-        contract_transaction,
-      };
-
-      Ok(final_result)
-    }
-  }
 
   fn get_host(&self) -> String {
     let protocol = match self.protocol {
@@ -524,128 +243,9 @@ impl Arweave {
       format!("{}://{}:{}", protocol, self.host, self.port)
     }
   }
-
-  async fn get_default_gql_variables(
-    &self,
-    owners: Vec::<String>,
-    contract_id: Option<String>,
-    app_name: Option<String>,
-    height: usize,
-  ) -> InteractionVariables {
-    let app_name_tag: TagFilter = match app_name {
-      Some(name) => TagFilter {
-        name: name.to_owned(),
-        values: vec!["binary".to_owned()],
-      },
-      None => TagFilter {
-        name: "App-Name".to_owned(),
-        values: vec!["SmartWeaveAction".to_owned()],
-      }
-    };
-
-    let variables: InteractionVariables = match contract_id {
-      Some(id) => InteractionVariables {
-        tags: vec![app_name_tag, TagFilter {
-          name: "Contract".to_owned(),
-          values: vec![id],
-        }],
-        owners: owners,
-        block_filter: BlockFilter { max: height },
-        first: MAX_REQUEST,
-        after: None,
-      },
-      None => InteractionVariables {
-        tags: vec![app_name_tag],
-        owners: owners,
-        block_filter: BlockFilter { max: height },
-        first: MAX_REQUEST,
-        after: None,
-      }
-    }; 
-    variables
-  }
-
-  async fn stream_interactions(
-    &self,
-    cursor: Option<String>,
-    variables: InteractionVariables,
-  ) -> Vec<GQLTransactionsResultInterface> {
-    stream::unfold(State::Next(cursor, variables), |state| async move {
-      match state {
-        State::End => None,
-        State::Next(cursor, variables) => {
-          let mut new_variables: InteractionVariables = variables.clone();
-
-          new_variables.after = cursor;
-
-          let tx = self
-            .get_next_interaction_page(new_variables, false, None)
-            .await
-            .unwrap();
-
-          if tx.edges.is_empty() {
-            None
-          } else {
-            let max_requests = self.get_max_edges(&tx.edges);
-
-            let edge = tx.edges.get(max_requests);
-
-            if let Some(result_edge) = edge {
-              let cursor = (&result_edge.cursor).to_owned();
-              Some((tx, State::Next(Some(cursor), variables)))
-            } else {
-              None
-            }
-          }
-        }
-      }
-    })
-    .collect::<Vec<GQLTransactionsResultInterface>>()
-    .await
-  }
-
-  fn get_max_edges(&self, data: &[GQLEdgeInterface]) -> usize {
-    let len = data.len();
-    if len == MAX_REQUEST {
-      MAX_REQUEST - 1
-    } else if len == 0 {
-      len
-    } else {
-      len - 1
-    }
-  }
-
-  async fn has_more(
-    &self,
-    variables: &InteractionVariables,
-    cursor: String,
-  ) -> Result<bool, AnyError> {
-    let mut variables = variables.to_owned();
-    variables.after = Some(cursor);
-    variables.first = 1;
-
-    let load_transactions = self
-      .get_next_interaction_page(variables, false, None)
-      .await?;
-
-    Ok(!load_transactions.edges.is_empty())
-  }
 }
 
 #[cfg(test)]
 mod tests {
-  use super::Arweave;
-
-  #[tokio::test]
-  pub async fn test_build_host() {
-    let arweave =
-      Arweave::new(80, String::from("arweave.net"), String::from("http"));
-    assert_eq!(arweave.get_host(), "http://arweave.net");
-    let arweave =
-      Arweave::new(443, String::from("arweave.net"), String::from("https"));
-    assert_eq!(arweave.get_host(), "https://arweave.net:443");
-    let arweave =
-      Arweave::new(500, String::from("arweave.net"), String::from("adksad"));
-    assert_eq!(arweave.get_host(), "https://arweave.net:500");
-  }
+ 
 }

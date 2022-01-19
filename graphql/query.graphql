@@ -1,0 +1,4 @@
+query TransactionsView($owner: String!) {
+  transactions(from: [$owner])
+}
+
