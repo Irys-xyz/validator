@@ -36,7 +36,7 @@ pub struct Fee {
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
-pub struct BlockData {
+pub struct TransactionData {
   size: String,
   r#type: Option<String>,
 }
@@ -49,7 +49,7 @@ pub struct BlockInfo {
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
-pub struct TransactionData {
+pub struct Transaction {
   pub id: String,
   pub owner: Owner,
   pub signature: String,
@@ -58,12 +58,12 @@ pub struct TransactionData {
   pub block: Option<BlockInfo>,
   pub fee: Fee,
   pub quantity: Fee,
-  pub data: BlockData
+  pub data: TransactionData
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct GraphqlNodes {
-  pub node: TransactionData
+  pub node: Transaction
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -86,7 +86,7 @@ pub struct TransactionStatus {
   pub block_indep_hash: String,
 }
 
-impl TransactionData {
+impl Transaction {
   pub fn get_tag(&self, tag: &str) -> Result<String, AnyError> {
     // Encodes the tag instead of decoding the keys.
     let encoded_tag = base64::encode_config(tag, base64::URL_SAFE_NO_PAD);
@@ -129,14 +129,14 @@ impl Arweave {
   pub async fn get_tx(
     &self,
     transaction_id: &str,
-  ) -> reqwest::Result<TransactionData> {
+  ) -> reqwest::Result<Transaction> {
     let request = self
       .client
       .get(format!("{}/tx/{}", self.get_host(), transaction_id))
       .send()
       .await
       .unwrap();
-    let transaction = request.json::<TransactionData>().await;
+    let transaction = request.json::<Transaction>().await;
     transaction
   }
 
@@ -188,8 +188,7 @@ impl Arweave {
   pub async fn get_latest_transactions(
     &self,
     owner: String
-  ) -> Result<GraphqlQueryResponse, ArweaveError> {
-
+  ) -> Result<Vec<Transaction>, ArweaveError> {
     let raw_query = format!("
       query {{
         transactions(owners:[\"{}\"]) {{
@@ -221,16 +220,6 @@ impl Arweave {
       owner
     );
 
-    /*
-    let query = 
-    TransactionsView::build_query(
-      transactions_view::Variables { 
-        owner: String::from("u-x-xjbD0RDR1RaBOtZAGdSq7TZynpl9UUYcvsnvnJo") 
-      });
-    let json_query = serde_json::to_string(&query.query).unwrap();
-    let json_variables = serde_json::to_string(&query.variables).unwrap();
-    */
-
     let url = format!("{}/graphql?query={}", self.get_host(), raw_query);
     let client = reqwest::Client::new();
 
@@ -240,16 +229,15 @@ impl Arweave {
       .send()
       .await;
 
-    /*
     if res.is_ok() {
-      Ok(res.unwrap().json().await);
+      let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();
+      let mut txs: Vec<Transaction> = Vec::<Transaction>::new();
+      for tx in &res.data.transactions.edges {
+        txs.push(tx.node.clone());
+      }
+
+      return Ok(txs)
     }
-    */
-    //dbg!("{}", res.unwrap().text().await);
-    let mut res = res.unwrap().json::<GraphqlQueryResponse>().await;
-    dbg!("{}", res);
-
-
 
     Err(ArweaveError::TxNotFound)
   } 

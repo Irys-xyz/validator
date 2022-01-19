@@ -1,4 +1,4 @@
-use super::arweave::TransactionData;
+use super::arweave::Transaction;
 use super::utils::hasher;
 use super::error::AnyError;
 use serde::Deserialize;
@@ -13,8 +13,8 @@ pub enum ContractType {
 
 pub fn get_contract_type(
   maybe_content_type: Option<String>,
-  contract_transaction: &TransactionData,
-  source_transaction: &TransactionData,
+  contract_transaction: &Transaction,
+  source_transaction: &Transaction,
 ) -> Result<ContractType, AnyError> {
   let contract_type = maybe_content_type
     .or_else(|| source_transaction.get_tag("Content-Type").ok())

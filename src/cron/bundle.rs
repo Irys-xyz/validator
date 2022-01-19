@@ -3,8 +3,7 @@ use awc::Client;
 use bundlr_sdk::verify::{file::verify_file_bundle};
 use paris::error;
 use serde::{Deserialize, Serialize};
-use super::arweave::gql_result::{GQLEdgeInterface};
-use super::arweave::error::AnyError;
+use crate::cron::arweave::arweave::Transaction;
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use super::error::ValidatorCronError;
@@ -38,27 +37,27 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     // Get latest txs for bundler
     // TODO: Get tx info
     //let txs = get_txs(bundler, from_last_page, max_results);
-    let txs = Vec::<Tx>::new();
+    let txs = Vec::<Transaction>::new();
 
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
-    let transactions =
+    let txs =
       arweave
       .get_latest_transactions(String::from("OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"))
       .await;
 
-    for tx in &txs {
-      println!("{:?}", tx.id);
+    if let Err(r) = txs {
+        error!("Error occurred while getting tx from peer - {}", r);
+    }   else if txs.is_ok() {
+        for tx in &txs.unwrap() {
+            println!("{:?}", tx.id);
+        }
+    } else {
+        println!("Error getting transactions");
     }
 
-    /*
-    let response = client
-        .get(format!("{}//{}", bundler.url, bundler.address))
-        .send()
-        .await;
-    */
-
     // For each tx see if I or my peers have the tx in their db
-    for tx in txs {
+    /*
+    for tx in &txs.unwrap() {
         // TODO: Check seeded
         // TODO: Download bundle
 
@@ -83,7 +82,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     // If valid - return
 
     // If not - vote to slash... once vote is confirmed then tell all peers to check
-
+    */
     Ok(())
 }
 
