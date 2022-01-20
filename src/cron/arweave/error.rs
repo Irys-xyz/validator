@@ -4,3 +4,5 @@ use derive_more::{Display, Error};
 pub enum ArweaveError {
     TxsNotFound
 }
+
+pub type AnyError = anyhow::Error;

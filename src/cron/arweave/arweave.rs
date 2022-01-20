@@ -1,5 +1,4 @@
-use super::error::ArweaveError;
-use super::error::AnyError;
+use super::error::{ ArweaveError, AnyError };
 use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
@@ -194,7 +193,7 @@ impl Arweave {
 
   pub async fn get_latest_transactions(
     &self,
-    owner: String,
+    owner: &String,
     first: Option<i32>,
     after: Option<String>,
   ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError> {
