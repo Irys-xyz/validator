@@ -1,8 +1,15 @@
 use derive_more::{Display, Error};
+use std::convert::From;
 
 #[derive(Debug, Display, Error, Clone)]
 pub enum ArweaveError {
-    TxsNotFound
+    TxsNotFound,
+    TagNotFound,
+    UnknownErr
 }
 
-pub type AnyError = anyhow::Error;
+impl From<anyhow::Error> for ArweaveError {
+    fn from(err: anyhow::Error) -> ArweaveError {
+        ArweaveError::UnknownErr
+    }
+}

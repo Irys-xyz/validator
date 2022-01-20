@@ -49,6 +49,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
             // TODO: For each tx, see if I or my peers have the tx in their db
             // TODO: for each transaction, get its data and save in a file.
             println!("{:?}", tx.id);
+            arweave.get_tx_data(&tx.id);
         }
     } else {
         println!("Error getting transactions");

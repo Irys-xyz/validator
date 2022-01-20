@@ -1,9 +1,8 @@
-use super::error::{ ArweaveError, AnyError };
-use reqwest::Client;
+use super::error::ArweaveError;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
-use std::iter::Iterator;
+use futures_util::{ StreamExt, TryStreamExt };
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -92,19 +91,6 @@ pub struct TransactionStatus {
   pub block_indep_hash: String,
 }
 
-impl Transaction {
-  pub fn get_tag(&self, tag: &str) -> Result<String, AnyError> {
-    // Encodes the tag instead of decoding the keys.
-    let encoded_tag = base64::encode_config(tag, base64::URL_SAFE_NO_PAD);
-    self
-      .tags
-      .iter()
-      .find(|t| t.name == encoded_tag)
-      .map(|t| Ok(String::from_utf8(base64::decode(&t.value)?)?))
-      .ok_or_else(|| AnyError::msg(format!("{} tag not found", tag)))?
-  }
-}
-
 #[derive(Clone)]
 pub enum ArweaveProtocol {
   HTTP,
@@ -128,7 +114,7 @@ impl Arweave {
         "http" => ArweaveProtocol::HTTP,
         "https" | _ => ArweaveProtocol::HTTPS,
       },
-      client: Client::new(),
+      client: reqwest::Client::new(),
     }
   }
 
@@ -146,14 +132,27 @@ impl Arweave {
     transaction
   }
 
-  pub async fn get_tx_data(&self, transaction_id: &str) -> Vec<u8> {
-    let request = self
+  pub async fn get_tx_data(&self, transaction_id: &str) -> reqwest::Result<Vec<u8>> {
+    let host : String = format!("{}/{}", self.get_host(), transaction_id);
+    println!("Getting data from {}", transaction_id);
+    match self
       .client
-      .get(format!("{}/{}", self.get_host(), transaction_id))
+      .get(&host)
       .send()
-      .await
-      .unwrap();
-    request.bytes().await.unwrap().to_vec()
+      .await {
+        Ok(res) => {
+          match res.text().await {
+            Ok(text) => {
+                println!("RESPONSE: {} bytes from {}", text.len(), &host);
+            }
+            Err(_) => println!("ERROR reading {}", &host),
+        }
+        }
+        Err(_) => println!("Error getting transaction {:?} data", transaction_id),
+      };
+
+
+    Ok(Vec::new())
   }
 
   pub async fn get_tx_block(

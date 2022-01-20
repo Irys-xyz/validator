@@ -1,6 +1,5 @@
 use derive_more::{Display, Error};
 use std::convert::From;
-use anyhow::Error;
 
 #[derive(Debug, Display, Error, Clone)]
 pub enum ValidatorCronError {
