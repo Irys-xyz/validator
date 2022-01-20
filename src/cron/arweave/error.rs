@@ -2,7 +2,5 @@ use derive_more::{Display, Error};
 
 #[derive(Debug, Display, Error, Clone)]
 pub enum ArweaveError {
-    TxNotFound
+    TxsNotFound
 }
-
-pub type AnyError = anyhow::Error;

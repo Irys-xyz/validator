@@ -63,12 +63,19 @@ pub struct Transaction {
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct GraphqlNodes {
-  pub node: Transaction
+  pub node: Transaction,
+  pub cursor: String,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct GraphqlEdges {
-  pub edges: Vec<GraphqlNodes>
+  pub edges: Vec<GraphqlNodes>,
+  pub pageInfo: PageInfo,
+}
+
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
+pub struct PageInfo {
+  pub hasNextPage: bool
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -187,12 +194,18 @@ impl Arweave {
 
   pub async fn get_latest_transactions(
     &self,
-    owner: String
-  ) -> Result<Vec<Transaction>, ArweaveError> {
+    owner: String,
+    first: Option<i32>,
+    after: Option<String>,
+  ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError> {
     let raw_query = format!("
       query {{
-        transactions(owners:[\"{}\"]) {{
+        transactions(owners:[\"{}\"] first: {} {}) {{
+          pageInfo {{
+            hasNextPage
+          }}
           edges {{
+            cursor
             node {{
               id
               owner {{ address }}
@@ -217,7 +230,12 @@ impl Arweave {
           }}
         }}
       }}",
-      owner
+      owner,
+      first.unwrap_or(100),
+      match after {
+        None => format!(""),
+        Some(a) => format!(r" after: {}", a)
+      }
     );
 
     let url = format!("{}/graphql?query={}", self.get_host(), raw_query);
@@ -232,14 +250,17 @@ impl Arweave {
     if res.is_ok() {
       let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();
       let mut txs: Vec<Transaction> = Vec::<Transaction>::new();
+      let mut end_cursor: Option<String> = None;
       for tx in &res.data.transactions.edges {
         txs.push(tx.node.clone());
+        end_cursor = Some(tx.cursor.clone());
       }
+      let has_next_page = res.data.transactions.pageInfo.hasNextPage;
 
-      return Ok(txs)
+      return Ok((txs, has_next_page, end_cursor))
     }
 
-    Err(ArweaveError::TxNotFound)
+    Err(ArweaveError::TxsNotFound)
   } 
 
   fn get_host(&self) -> String {

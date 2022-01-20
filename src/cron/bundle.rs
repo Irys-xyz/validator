@@ -42,13 +42,13 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
     let txs =
       arweave
-      .get_latest_transactions(String::from("OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"))
+      .get_latest_transactions(String::from("OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"), None, None)
       .await;
 
     if let Err(r) = txs {
         error!("Error occurred while getting tx from peer - {}", r);
     }   else if txs.is_ok() {
-        for tx in &txs.unwrap() {
+        for tx in &txs.unwrap().0 {
             println!("{:?}", tx.id);
         }
     } else {
