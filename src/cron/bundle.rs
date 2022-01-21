@@ -1,9 +1,10 @@
 
+use std::path::Path;
+
 use awc::Client;
 use bundlr_sdk::verify::{file::verify_file_bundle};
 use paris::error;
 use serde::{Deserialize, Serialize};
-use crate::cron::arweave::arweave::Transaction;
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use super::error::ValidatorCronError;
@@ -23,7 +24,7 @@ pub struct TxReceipt {
 
 pub struct Tx {
     id: String,
-    block: u64
+    block_height: Option<u64>
 }
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
@@ -35,44 +36,44 @@ pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
 
 pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError> {
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
-    let txs =
+    let txs_req =
       arweave
       .get_latest_transactions(&bundler.address, Some(50), None)
       .await;
 
-    if let Err(r) = txs {
+    if let Err(r) = txs_req {
         error!("Error occurred while getting txs from bundler address: \n {}. \n Error: {}",
                 bundler.address,
                 r);
-    }   else if txs.is_ok() {
-        for tx in &txs.unwrap().0 {
-            // TODO: For each tx, see if I or my peers have the tx in their db
-            // TODO: for each transaction, get its data and save in a file.
-            arweave.get_tx_data(&tx.id).await;
-        }
-    } else {
-        println!("Error getting transactions");
-    }
-
-    // For each tx see if I or my peers have the tx in their db
-    /*
-    for tx in &txs.unwrap() {
-        // TODO: Check seeded
-        // TODO: Download bundle
-
-        let bundle_txs = verify_file_bundle("filename".to_string()).await.unwrap();
-        for bundle_tx in bundle_txs {
-            let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(tx.id.as_str()).await {
-                tx_receipt
-            } else if let Ok(tx_receipt) = tx_exists_on_peers(tx.id.as_str()).await {
-                tx_receipt
-            } else {
-                continue;
+    }   else if txs_req.is_ok() {
+        let txs_req = &txs_req.unwrap().0;
+        for transaction in txs_req {
+            // TODO: Check seeded [?]
+            // TODO: Download bundle [?]
+            let tx = Tx {
+                id: transaction.id.clone(),
+                block_height: match &transaction.block {
+                    Some(b) => Some(b.height),
+                    None => None
+                }
             };
 
-            // Verify tx receipt
+            let file_path = arweave.get_tx_data(&tx.id).await.unwrap();
+            let bundle_txs = verify_file_bundle(file_path).await.unwrap();
+            
+            for bundle_tx in bundle_txs {
+                let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(tx.id.as_str()).await {
+                    tx_receipt
+                } else if let Ok(tx_receipt) = tx_exists_on_peers(tx.id.as_str()).await {
+                    tx_receipt
+                } else {
+                    continue;
+                };
+                // Verify tx receipt
+
+            }
         }
-    };
+    }
 
     // If no - sad
 
@@ -81,7 +82,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     // If valid - return
 
     // If not - vote to slash... once vote is confirmed then tell all peers to check
-    */
+
     Ok(())
 }
 

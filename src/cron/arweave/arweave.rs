@@ -150,7 +150,7 @@ impl Arweave {
 
     while let Some(item) = stream.next().await {
       if let Err(r) = item {
-        print!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
+        println!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
       } else {
         buffer.write(&item.unwrap());
       }
