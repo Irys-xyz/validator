@@ -2,7 +2,11 @@ use super::error::ArweaveError;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
-use futures_util::{ StreamExt, TryStreamExt };
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use futures_util::StreamExt;
+use std::fs::File;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -132,27 +136,27 @@ impl Arweave {
     transaction
   }
 
-  pub async fn get_tx_data(&self, transaction_id: &str) -> reqwest::Result<Vec<u8>> {
+  pub async fn get_tx_data(&self, transaction_id: &str) -> reqwest::Result<String> {
+    let raw_path = format!("./tx_data/{}", transaction_id);
+    let file_path = Path::new(&raw_path);
+    let mut buffer = 
+      File::create(&file_path)
+      .unwrap();
+
     let host : String = format!("{}/{}", self.get_host(), transaction_id);
-    println!("Getting data from {}", transaction_id);
-    match self
-      .client
-      .get(&host)
-      .send()
-      .await {
-        Ok(res) => {
-          match res.text().await {
-            Ok(text) => {
-                println!("RESPONSE: {} bytes from {}", text.len(), &host);
-            }
-            Err(_) => println!("ERROR reading {}", &host),
-        }
-        }
-        Err(_) => println!("Error getting transaction {:?} data", transaction_id),
-      };
+    let mut stream = reqwest::get(&host)
+      .await?
+      .bytes_stream();
 
+    while let Some(item) = stream.next().await {
+      if let Err(r) = item {
+        print!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
+      } else {
+        buffer.write(&item.unwrap());
+      }
+    }
 
-    Ok(Vec::new())
+    Ok(String::from(file_path.to_string_lossy()))
   }
 
   pub async fn get_tx_block(
