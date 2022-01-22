@@ -15,7 +15,7 @@ pub struct Bundler {
     url: String
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
     block: u64,
     tx_id: String,
@@ -59,7 +59,13 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
             };
 
             let file_path = arweave.get_tx_data(&tx.id).await.unwrap();
-            let bundle_txs = verify_file_bundle(file_path).await.unwrap();
+            let bundle_txs = match verify_file_bundle(file_path).await {
+                Err(r) => {
+                    dbg!(r);
+                    Vec::new()
+                },
+                Ok(v) => v,
+            };
             
             for bundle_tx in bundle_txs {
                 let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(tx.id.as_str()).await {
@@ -69,6 +75,8 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                 } else {
                     continue;
                 };
+
+                println!("Tx receipt: {:?}", &tx_receipt);
                 // Verify tx receipt
 
             }

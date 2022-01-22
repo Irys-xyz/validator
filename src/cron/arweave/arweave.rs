@@ -144,19 +144,25 @@ impl Arweave {
       .unwrap();
 
     let host : String = format!("{}/{}", self.get_host(), transaction_id);
-    let mut stream = reqwest::get(&host)
-      .await?
-      .bytes_stream();
 
-    while let Some(item) = stream.next().await {
-      if let Err(r) = item {
-        println!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
-      } else {
-        buffer.write(&item.unwrap());
+    let response = reqwest::get(&host).await?;
+    if response.status().is_success() {
+      let mut stream = reqwest::get(&host)
+        .await?
+        .bytes_stream();
+  
+      while let Some(item) = stream.next().await {
+        if let Err(r) = item {
+          println!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
+        } else {
+          buffer.write(&item.unwrap());
+        }
       }
+
+      return Ok(String::from(file_path.to_string_lossy()))
     }
 
-    Ok(String::from(file_path.to_string_lossy()))
+    Ok(String::from(""))
   }
 
   pub async fn get_tx_block(
