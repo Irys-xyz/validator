@@ -58,27 +58,30 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                 }
             };
 
-            let file_path = arweave.get_tx_data(&tx.id).await.unwrap();
-            let bundle_txs = match verify_file_bundle(file_path).await {
-                Err(r) => {
-                    dbg!(r);
-                    Vec::new()
-                },
-                Ok(v) => v,
-            };
-            
-            for bundle_tx in bundle_txs {
-                let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(tx.id.as_str()).await {
-                    tx_receipt
-                } else if let Ok(tx_receipt) = tx_exists_on_peers(tx.id.as_str()).await {
-                    tx_receipt
-                } else {
-                    continue;
+            let file_path = arweave.get_tx_data(&tx.id).await;
+            if file_path.is_ok() {
+                println!("Verifying file: {}", &file_path.as_ref().unwrap());
+                let bundle_txs = match verify_file_bundle(file_path.unwrap()).await {
+                    Err(r) => {
+                        dbg!(r);
+                        Vec::new()
+                    },
+                    Ok(v) => v,
                 };
-
-                println!("Tx receipt: {:?}", &tx_receipt);
-                // Verify tx receipt
-
+                
+                for bundle_tx in bundle_txs {
+                    let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(tx.id.as_str()).await {
+                        tx_receipt
+                    } else if let Ok(tx_receipt) = tx_exists_on_peers(tx.id.as_str()).await {
+                        tx_receipt
+                    } else {
+                        continue;
+                    };
+    
+                    println!("Tx receipt: {:?}", &tx_receipt);
+                    // Verify tx receipt
+    
+                }
             }
         }
     }

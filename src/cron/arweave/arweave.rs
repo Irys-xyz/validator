@@ -162,7 +162,7 @@ impl Arweave {
       return Ok(String::from(file_path.to_string_lossy()))
     }
 
-    Ok(String::from(""))
+    Err(response.error_for_status().err().unwrap())
   }
 
   pub async fn get_tx_block(
