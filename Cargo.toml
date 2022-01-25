@@ -22,7 +22,7 @@ openssl = "0.10.38"
 actix-rt = "2.5.0"
 awc = "3.0.0-beta.14"
 futures = "0.3.19"
-bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git" }
+bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "feature/bundler-validation" }
 num-traits = "0.2.14"
 avro-rs = "0.13.0"
 async-stream = "0.3.2"
