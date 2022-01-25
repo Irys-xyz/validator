@@ -1,0 +1,44 @@
+[package]
+name = "validator-rust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4.0.0-beta.15"
+redis = { version = "0.21.4", features = ["tokio-comp"] }
+serde = "1.0.132"
+serde_json = "1.0.73"
+tokio = { version = "1.15.0", features = ["full"] }
+bytes = "1.1.0"
+derive_more = "0.99.17"
+paris = { version = "1.5.8", features = ["timestamps", "macros"] }
+data-encoding = "2.3.2"
+dotenv = "0.15.0"
+tracing = "0.1.29"
+env_logger = "0.9.0"
+openssl = "0.10.38"
+actix-rt = "2.5.0"
+awc = "3.0.0-beta.14"
+futures = "0.3.19"
+bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git" }
+num-traits = "0.2.14"
+avro-rs = "0.13.0"
+async-stream = "0.3.2"
+bigint = "4.4.3"
+lazy_static = "1.4.0"
+reool = "0.30.0"
+jsonwebkey = "0.3.4"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+base64 = "0.13.0"
+once_cell = "1.9.0"
+indexmap = { version = "1.6.2", features = ["serde-1"] }
+lru = "0.7.2"
+anyhow = "1.0"
+dirs = "4.0"
+hex = "*"
+sha2 = "0.9.5"
+sqlx = { version = "0.5.10", features = [ "runtime-actix-native-tls", "sqlite" ] }
+diesel = "1.4.8"
+diesel-async = { git = "https://github.com/vimmerru/diesel_async.git", branch = "", features = [ "" ] }

@@ -1,26 +1,31 @@
-use diesel::table;
+table! {
+    leaders (address) {
+        address -> Bpchar,
+    }
+}
 
 table! {
-    transactions (id, bundler) {
-        id -> Text,
-        bundler -> Text,
-        epoch -> BigInt,
-        block_promised -> BigInt,
-        block_actual -> Nullable<BigInt>,
-        signature -> Binary,
+    transactions (id) {
+        id -> Bpchar,
+        epoch -> Int8,
+        block_promised -> Int8,
+        block_actual -> Nullable<Int8>,
+        signature -> Bytea,
         validated -> Bool,
     }
 }
 
 table! {
     validators (address) {
-        address -> Text,
-        url -> Text,
+        address -> Bpchar,
+        url -> Nullable<Varchar>,
     }
 }
 
-table! {
-    leaders (address) {
-        address -> Text,
-    }
-}
+joinable!(leaders -> validators (address));
+
+allow_tables_to_appear_in_same_query!(
+    leaders,
+    transactions,
+    validators,
+);
