@@ -1,15 +1,15 @@
-use std::{time::{SystemTime, UNIX_EPOCH}, sync::RwLock};
+use std::{sync::RwLock, collections::{HashSet, HashMap}};
 
 use actix_web::{HttpResponse, web::{Json, Data}};
-use bundlr_sdk::{deep_hash::{DeepHashChunk}, deep_hash_sync::deep_hash_sync, JWK};
+use bundlr_sdk::{deep_hash::{DeepHashChunk, ONE_AS_BUFFER}, deep_hash_sync::deep_hash_sync, JWK};
 use bytes::Bytes;
 use jsonwebkey::JsonWebKey;
-use openssl::{sign::Verifier, hash::MessageDigest, rsa::{Padding}, pkey::PKey};
+use openssl::{sign::{Verifier, self}, hash::MessageDigest, rsa::{Padding}, pkey::{PKey, Public}, sha::sha256};
 use redis::{AsyncCommands};
 use serde::{Deserialize, Serialize};
-use data_encoding::{BASE64URL, BASE64};
-use crate::server::error::ValidatorServerError;
-
+use data_encoding::BASE64URL;
+use crate::{server::error::ValidatorServerError, consts::BUNDLR_AS_BUFFER};
+use lazy_static::lazy_static;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ValidatorSignature {
@@ -55,9 +55,7 @@ pub async fn post_tx(
         }
     };
 
-    let number_of_sigs = body.validator_signatures.len();
-
-    let body2 = body.clone();
+    let body_clone = body.clone();
 
     let valid = actix_rt::task::spawn_blocking(move || {
         let jwk = JWK {
@@ -70,8 +68,6 @@ pub async fn post_tx(
         let key: JsonWebKey = p.parse().unwrap();
         
         let pkey = PKey::public_key_from_der(key.key.to_der().as_slice()).unwrap();   
-
-        let body_string = serde_json::to_string(&body).unwrap();
 
         let hash = deep_hash_body(&body).unwrap();
 
@@ -91,46 +87,67 @@ pub async fn post_tx(
         tracing::info!("Received invalid signature");
         return Ok(HttpResponse::BadRequest().finish());
     };
-
-    let mut signatures = Vec::with_capacity(2);
-    if number_of_sigs < 3 {
-        let validators = validators.read().unwrap();
-
-        for validator in validators.iter() {
-           let mut response = awc_client
-            .post(format!("{}/tx", validator))
-            .send_json(&body2)
-            .await
-            .unwrap();
-
-            let b = response.body()
-                .await
-                .unwrap();
-
-            let sig = ValidatorSignature {
-                public: "".to_string(),
-                signature: BASE64.encode(&b)
-            };
-
-            signatures.push(sig);
-        }
-
-        
-    }
-
-    let start = SystemTime::now();
-    let since_the_epoch = start
-        .duration_since(UNIX_EPOCH)
-        .unwrap();
     
-    let in_ms = since_the_epoch.as_secs() * 1000 +
-        since_the_epoch.subsec_nanos() as u64 / 1_000_000;
-    
-    // Add to db
-    conn.set(&key, in_ms).await?;
-    conn.expire(&key, 172800).await?;
+    add_to_db(&body_clone).await?;
 
     Ok(HttpResponse::Ok().finish())
+}
+
+fn verify_body(body: &PostTxBody) -> bool {
+    if body.validator_signatures.len() < 3 {
+        return false;
+    };
+
+
+    let block = body.block.to_string()
+        .as_bytes()
+        .to_vec();
+
+    let tx_id = body.id.as_bytes().to_vec();
+
+    let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
+        DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
+        DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
+        DeepHashChunk::Chunk(tx_id.into()),
+        DeepHashChunk::Chunk(block.into())
+    ])).unwrap();
+
+
+    lazy_static! {
+        static ref PUBLIC: PKey<Public> = {
+            let jwk = JWK {
+                kty: "RSA",
+                e: "AQAB",
+                n: BASE64URL.encode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes())
+            };
+
+            let p = serde_json::to_string(&jwk).unwrap();
+            let key: JsonWebKey = p.parse().unwrap();
+            
+            PKey::public_key_from_der(key.key.to_der().as_slice()).unwrap()
+        };
+    };
+
+    let sig = BASE64URL.decode(body.signature.as_bytes()).unwrap();
+    
+    let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &PUBLIC).unwrap();
+    verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
+    verifier.update(&message).unwrap();
+    if !verifier.verify(&sig).unwrap_or(false) {
+        return false;
+    };
+
+    let validators_in_epoch = HashMap::<String, String>::new();
+    body.validator_signatures.iter().all(|sig| {
+        let address = public_to_address(&sig.public);
+        if !validators_in_epoch.contains_key(&address) {
+            return false;
+        };
+
+        
+
+        true
+    })
 }
 
 // TODO: Fix this
@@ -139,4 +156,12 @@ fn deep_hash_body(body: &PostTxBody) -> Result<Bytes, ValidatorServerError> {
         DeepHashChunk::Chunk(body.id.clone().into()),
         DeepHashChunk::Chunk(body.block.to_string().into())
     ])).map_err(|_| ValidatorServerError::InternalError)
+}
+
+async fn add_to_db(body: &PostTxBody) -> Result<(), ValidatorServerError> {
+    Ok(())
+}
+
+fn public_to_address(n: &str) -> String {
+    BASE64URL.encode(&sha256(&BASE64URL.decode(n.as_bytes()).unwrap())[..])
 }

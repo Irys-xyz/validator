@@ -54,3 +54,10 @@ impl From<JoinError> for ValidatorServerError {
         ValidatorServerError::InternalError
     }
 }
+
+impl From<diesel::result::Error> for ValidatorServerError {
+    fn from(e: diesel::result::Error) -> Self {
+        log!("Error occurred while db op - {}", e);
+        ValidatorServerError::InternalError
+    }
+}

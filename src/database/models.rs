@@ -5,7 +5,6 @@ use super::schema::transactions;
 #[derive(Serialize, Queryable)]
 pub struct Transaction {
     id: String,
-    bundler: String,
     epoch: i64,
     block_promised: i64,
     block_actual: Option<i64>,
@@ -15,12 +14,11 @@ pub struct Transaction {
 
 #[derive(Insertable, Clone)]
 #[table_name = "transactions"]
-pub struct NewTransaction<'a> {
-    pub id: &'a str,
-    pub bundler: &'a str,
+pub struct NewTransaction {
+    pub id: String,
     pub epoch: i64,
     pub block_promised: i64,
     pub block_actual: Option<i64>,
-    pub signature: &'a [u8],
+    pub signature: Vec<u8>,
     pub validated: bool
 }

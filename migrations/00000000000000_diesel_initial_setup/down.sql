@@ -5,8 +5,8 @@
 DROP FUNCTION IF EXISTS diesel_manage_updated_at(_tbl regclass);
 DROP FUNCTION IF EXISTS diesel_set_updated_at();
 
-DROP TABLE votes;
-DROP TABLE proposals;
-DROP TABLE leaders;
-DROP TABLE validators;
-DROP TABLE transactions;
+DROP TABLE IF EXISTS votes;
+DROP TABLE IF EXISTS proposals;
+DROP TABLE IF EXISTS leaders;
+DROP TABLE IF EXISTS validators;
+DROP TABLE IF EXISTS transactions;

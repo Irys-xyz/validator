@@ -37,13 +37,12 @@ $$ LANGUAGE plpgsql;
 
 CREATE TABLE IF NOT EXISTS transactions (
     id CHAR(43),
-    bundler CHAR(43),
-    epoch BIGINT,
-    block_promised BIGINT,
+    epoch BIGINT NOT NULL,
+    block_promised BIGINT NOT NULL,
     block_actual BIGINT,
-    signature bytea,
-    validated bool,
-    PRIMARY KEY (id, bundler)
+    signature bytea NOT NULL,
+    validated bool NOT NULL,
+    PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS validators (
@@ -52,11 +51,7 @@ CREATE TABLE IF NOT EXISTS validators (
 );
 
 CREATE TABLE IF NOT EXISTS leaders (
-    address CHAR(43) REFERENCES validators(address)
+    address CHAR(43) PRIMARY KEY REFERENCES validators(address)
 );
-
-CREATE TABLE IF NOT EXISTS proposals ();
-
-CREATE TABLE IF NOT EXISTS votes ();
 
 CREATE INDEX epoch_transactions_idx ON transactions(epoch);

@@ -13,12 +13,11 @@ use routes::index::index;
 use diesel::r2d2::Pool;
 use tokio::runtime::Handle;
 
-use crate::server::routes::sign::sign;
+use crate::server::routes::sign::sign_route;
 
 pub async fn run_server() -> std::io::Result<()> {
     info!("Starting up HTTP server...");
 
-    std::env::set_var("RUST_LOG", "RUST_LOG=info,sqlx=warn,a=debug");
     env_logger::init();
     info!("Starting up HTTP server...");
 
@@ -26,16 +25,7 @@ pub async fn run_server() -> std::io::Result<()> {
     let redis_connection_string = std::env::var("REDIS_CONNECTION_URL").unwrap();
     info!("Starting up HTTP server...");
 
-    let redis_client = redis::Client::open(redis_connection_string.as_str()).unwrap();
-
     let db_url = std::env::var("DATABASE_URL").unwrap();
-
-    let validators = Arc::new(RwLock::new(Vec::<String>::new()));
-
-    let v = validators.clone();
-    actix_rt::spawn(async {
-        v;
-    });
 
     info!("Starting up HTTP server...");
 
@@ -55,14 +45,13 @@ pub async fn run_server() -> std::io::Result<()> {
             .unwrap();
 
         App::new()
-            .app_data(Data::from(validators.clone()))
             .app_data(Data::new(redis_pool))
             .app_data(Data::new(postgres_pool))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
             .route("/tx/{tx_id}", web::get().to(get_tx))
             .route("/tx", web::post().to(post_tx))
-            .route("/sign", web::post().to(sign))
+            .route("/sign", web::post().to(sign_route))
     })
     .shutdown_timeout(5)
     .bind(format!("127.0.0.1:{}", port))?
