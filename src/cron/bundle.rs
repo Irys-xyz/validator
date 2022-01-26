@@ -1,9 +1,12 @@
+extern crate diesel;
+
 use awc::Client;
 use bundlr_sdk::JWK;
 use bundlr_sdk::deep_hash_sync::{ deep_hash_sync, ONE_AS_BUFFER };
 use bundlr_sdk::verify::types::Item;
 use bundlr_sdk::{ verify::file::verify_file_bundle, deep_hash::DeepHashChunk };
 use data_encoding::BASE64URL_NOPAD;
+use diesel::prelude::*;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{Public, PKey};
 use openssl::rsa::Padding;
@@ -13,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use lazy_static::lazy_static;
 use jsonwebkey::JsonWebKey;
 use crate::database::models::NewTransaction;
+use crate::database::schema::transactions;
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use super::error::ValidatorCronError;
@@ -33,6 +37,13 @@ pub struct TxReceipt {
 pub struct Tx {
     id: String,
     block_height: Option<i64>
+}
+
+pub fn get_db_connection() -> PgConnection {
+    let db_url = std::env::var("DATABASE_URL").unwrap();
+    let conn_manager = PgConnection::establish(&db_url)
+        .unwrap_or_else(|_| panic!("Error connecting to {}", db_url));
+    conn_manager
 }
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
@@ -89,7 +100,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
             info!("Verifying file: {}", &file_path.as_ref().unwrap());
             let bundle_txs = match verify_file_bundle(file_path.unwrap()).await {
                 Err(r) => {
-                    dbg!(r);
+                    error!("{}", r);
                     Vec::new()
                 },
                 Ok(v) => v,
@@ -109,7 +120,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                     if tx_receipt.block <= current_block.unwrap() {
                         insert_tx_in_db(&tx_receipt, current_block.unwrap());
                     } else {
-                        vote_slash();
+                        vote_slash(&bundler);
                     }
                 }
             }
@@ -128,8 +139,8 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 }
 
 
-fn insert_tx_in_db(tx_receipt: &TxReceipt, block_included: i64) -> std::io::Result<bool> {
-    let tx = NewTransaction {
+fn insert_tx_in_db(tx_receipt: &TxReceipt, block_included: i64) -> std::io::Result<()> {
+    let new_tx = NewTransaction {
         id: tx_receipt.tx_id.clone(),
         epoch: 0, // TODO: implement epoch correctly
         block_promised: tx_receipt.block,
@@ -137,7 +148,14 @@ fn insert_tx_in_db(tx_receipt: &TxReceipt, block_included: i64) -> std::io::Resu
         signature: tx_receipt.signature.as_bytes().to_vec(),
         validated: true
     };
-    Ok(true)
+
+    let conn = get_db_connection();
+    diesel::insert_into(transactions::table)
+        .values(&new_tx)
+        .execute(&conn)
+        .expect(format!("Error inserting new tx {}", &new_tx.id).as_str());
+
+    Ok(())
 }
 
 // TODO: implement the database verification correctly
@@ -219,6 +237,6 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     Ok(verifier.verify(&sig).unwrap_or(false))
 }
 
-fn vote_slash () {
-
+fn vote_slash (bundler: &Bundler) -> Result<(), ()> {
+    Ok(())
 }
