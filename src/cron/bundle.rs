@@ -8,10 +8,11 @@ use openssl::hash::MessageDigest;
 use openssl::pkey::{Public, PKey};
 use openssl::rsa::Padding;
 use openssl::sign;
-use paris::error;
+use paris::{error, info};
 use serde::{Deserialize, Serialize};
 use lazy_static::lazy_static;
 use jsonwebkey::JsonWebKey;
+use crate::database::models::NewTransaction;
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use super::error::ValidatorCronError;
@@ -24,14 +25,14 @@ pub struct Bundler {
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
-    block: u64,
+    block: i64,
     tx_id: String,
     signature: String
 }
 
 pub struct Tx {
     id: String,
-    block_height: Option<u64>
+    block_height: Option<i64>
 }
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
@@ -49,58 +50,94 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
       .await;
 
     if let Err(r) = txs_req {
-        error!("Error occurred while getting txs from bundler address: \n {}. \n Error: {}",
+        error!("Error occurred while getting txs from bundler address: \n {}. Error: {}",
                 bundler.address,
                 r);
-    }   else if txs_req.is_ok() {
-        let txs_req = &txs_req.unwrap().0;
-        for transaction in txs_req {
-            // TODO: Check seeded [?]
-            // TODO: Download bundle [?]
-            let arweave_tx = Tx {
-                id: transaction.id.clone(),
-                block_height: match &transaction.block {
-                    Some(b) => Some(b.height),
-                    None => None
-                }
-            };
+        return Err(ValidatorCronError::TxsFromAddressNotFound)
+    }
 
-            let file_path = arweave.get_tx_data(&arweave_tx.id).await;
-            if file_path.is_ok() {
-                println!("Verifying file: {}", &file_path.as_ref().unwrap());
-                let bundle_txs = match verify_file_bundle(file_path.unwrap()).await {
-                    Err(r) => {
-                        dbg!(r);
-                        Vec::new()
-                    },
-                    Ok(v) => v,
+    if txs_req.is_err() {
+        error!("Error occurred while getting txs from bundler address: \n {}.",
+                bundler.address);
+        return Err(ValidatorCronError::TxsFromAddressNotFound)
+    }
+
+    let txs_req = &txs_req.unwrap().0;
+    for bundle in txs_req {
+        // TODO: Check seeded [?]
+        // TODO: Download bundle [?]
+        let mut current_block = match &bundle.block {
+            Some(b) => Some(b.height),
+            None => None
+        };
+
+        if current_block.is_none() {
+            info!("Tx {} not included in any block, moving on ...", &bundle.id);
+            continue;
+        }
+
+        let arweave_tx = Tx {
+            id: bundle.id.clone(),
+            block_height: match &bundle.block {
+                Some(b) => Some(b.height),
+                None => None
+            }
+        };
+
+        let file_path = arweave.get_tx_data(&arweave_tx.id).await;
+        if file_path.is_ok() {
+            info!("Verifying file: {}", &file_path.as_ref().unwrap());
+            let bundle_txs = match verify_file_bundle(file_path.unwrap()).await {
+                Err(r) => {
+                    dbg!(r);
+                    Vec::new()
+                },
+                Ok(v) => v,
+            };
+            
+            for bundle_tx in bundle_txs {
+                let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(&bundle_tx).await {
+                    tx_receipt
+                } else if let Ok(tx_receipt) = tx_exists_on_peers(&bundle_tx.tx_id).await {
+                    tx_receipt
+                } else {
+                    continue;
                 };
-                
-                for bundle_tx in bundle_txs {
-                    let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(&bundle_tx).await {
-                        tx_receipt
-                    } else if let Ok(tx_receipt) = tx_exists_on_peers(&bundle_tx.tx_id).await {
-                        tx_receipt
+
+                let tx_is_ok = verify_tx_receipt(&tx_receipt);
+                if tx_is_ok.unwrap() {
+                    if tx_receipt.block <= current_block.unwrap() {
+                        insert_tx_in_db(&tx_receipt, current_block.unwrap());
                     } else {
-                        continue;
-                    };
-    
-                    let tx_is_ok = verify_tx_receipt(&tx_receipt);
-                    println!("{:?}", tx_is_ok);
+                        vote_slash();
+                    }
                 }
             }
         }
     }
 
-    // If no - sad
+    // If no - sad - OK
 
-    // If yes - check that block_seeded == block_expected
+    // If yes - check that block_seeded == block_expected - 
 
     // If valid - return
 
     // If not - vote to slash... once vote is confirmed then tell all peers to check
 
     Ok(())
+}
+
+
+fn insert_tx_in_db(tx_receipt: &TxReceipt, block_included: i64) -> std::io::Result<bool> {
+    let tx = NewTransaction {
+        id: tx_receipt.tx_id.clone(),
+        epoch: 0, // TODO: implement epoch correctly
+        block_promised: tx_receipt.block,
+        block_actual: Some(block_included),
+        signature: tx_receipt.signature.as_bytes().to_vec(),
+        validated: true
+    };
+    Ok(true)
 }
 
 // TODO: implement the database verification correctly
@@ -180,4 +217,8 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
     verifier.update(&message).unwrap();
     Ok(verifier.verify(&sig).unwrap_or(false))
+}
+
+fn vote_slash () {
+
 }

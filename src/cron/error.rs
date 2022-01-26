@@ -4,7 +4,9 @@ use std::convert::From;
 #[derive(Debug, Display, Error, Clone)]
 pub enum ValidatorCronError {
     TxNotFound,
-    AddressNotFound
+    AddressNotFound,
+    TxsFromAddressNotFound,
+    NoBlockIncluded
 }
 
 impl From<anyhow::Error> for ValidatorCronError {

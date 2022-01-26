@@ -1,4 +1,5 @@
 use super::error::ArweaveError;
+use paris::error;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -46,8 +47,8 @@ pub struct TransactionData {
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct BlockInfo {
   pub id: String,
-  pub timestamp: u64,
-  pub height: u64,
+  pub timestamp: i64,
+  pub height: i64,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -153,7 +154,8 @@ impl Arweave {
   
       while let Some(item) = stream.next().await {
         if let Err(r) = item {
-          println!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
+          error!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
+          return Err(r)
         } else {
           buffer.write(&item.unwrap());
         }

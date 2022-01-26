@@ -29,7 +29,7 @@ where
             info!("Task running - {}", description);
             match f().await {
                 Ok(_) => info!("Task finished - {}", description),
-                Err(e) => error!("Task error - {} \n with {}", description, e),
+                Err(e) => error!("Task error - {} with {}", description, e),
             };
 
             info!("Task sleeping for {} seconds - {}", sleep, description);
