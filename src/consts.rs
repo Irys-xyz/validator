@@ -4,7 +4,7 @@ use data_encoding::BASE64URL_NOPAD;
 use lazy_static::lazy_static;
 use openssl::sha::sha256;
 
-pub const VALIDATOR_AS_BUFFER: &'static [u8] = "Validator".as_bytes();
+pub const VALIDATOR_AS_BUFFER: &[u8] = "Validator".as_bytes();
 pub const BUNDLR_AS_BUFFER: &[u8] = "Bundlr".as_bytes();
 
 lazy_static! {

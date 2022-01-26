@@ -41,9 +41,9 @@ pub struct Tx {
 
 pub fn get_db_connection() -> PgConnection {
     let db_url = std::env::var("DATABASE_URL").unwrap();
-    let conn_manager = PgConnection::establish(&db_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", db_url));
-    conn_manager
+    
+    PgConnection::establish(&db_url)
+        .unwrap_or_else(|_| panic!("Error connecting to {}", db_url))
 }
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
@@ -77,10 +77,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     for bundle in txs_req {
         // TODO: Check seeded [?]
         // TODO: Download bundle [?]
-        let mut current_block = match &bundle.block {
-            Some(b) => Some(b.height),
-            None => None
-        };
+        let current_block = bundle.block.as_ref().map(|b| b.height);
 
         if current_block.is_none() {
             info!("Tx {} not included in any block, moving on ...", &bundle.id);
@@ -89,10 +86,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 
         let arweave_tx = Tx {
             id: bundle.id.clone(),
-            block_height: match &bundle.block {
-                Some(b) => Some(b.height),
-                None => None
-            }
+            block_height: bundle.block.as_ref().map(|b| b.height)
         };
 
         let file_path = arweave.get_tx_data(&arweave_tx.id).await;
@@ -153,7 +147,7 @@ fn insert_tx_in_db(tx_receipt: &TxReceipt, block_included: i64) -> std::io::Resu
     diesel::insert_into(transactions::table)
         .values(&new_tx)
         .execute(&conn)
-        .expect(format!("Error inserting new tx {}", &new_tx.id).as_str());
+        .unwrap_or_else(|_| panic!("Error inserting new tx {}", &new_tx.id));
 
     Ok(())
 }
@@ -237,6 +231,6 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     Ok(verifier.verify(&sig).unwrap_or(false))
 }
 
-fn vote_slash (bundler: &Bundler) -> Result<(), ()> {
+fn vote_slash (_bundler: &Bundler) -> Result<(), ()> {
     Ok(())
 }

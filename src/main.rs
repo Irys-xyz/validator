@@ -10,8 +10,6 @@ mod types;
 mod consts;
 
 use std::collections::HashSet;
-use std::iter::FromIterator;
-
 use server::run_server;
 use cron::run_crons;
 

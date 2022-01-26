@@ -1,4 +1,4 @@
-use std::{sync::RwLock, collections::{HashSet, HashMap}};
+use std::{sync::RwLock, collections::{HashMap}};
 
 use actix_web::{HttpResponse, web::{Json, Data}};
 use bundlr_sdk::{deep_hash::{DeepHashChunk, ONE_AS_BUFFER}, deep_hash_sync::deep_hash_sync, JWK};
@@ -31,10 +31,10 @@ pub struct PostTxBody {
 pub async fn post_tx(
     body: Json<PostTxBody>,
     redis_client: Data<redis::Client>, 
-    awc_client: Data<awc::Client>,
+    _awc_client: Data<awc::Client>,
     validators: Data<RwLock<Vec<String>>>
 ) -> actix_web::Result<HttpResponse, ValidatorServerError> {
-    let validators = validators.into_inner();
+    let _validators = validators.into_inner();
     let body = body.into_inner();
     let mut conn = redis_client.get_async_connection().await?;
 
@@ -158,7 +158,7 @@ fn deep_hash_body(body: &PostTxBody) -> Result<Bytes, ValidatorServerError> {
     ])).map_err(|_| ValidatorServerError::InternalError)
 }
 
-async fn add_to_db(body: &PostTxBody) -> Result<(), ValidatorServerError> {
+async fn add_to_db(_body: &PostTxBody) -> Result<(), ValidatorServerError> {
     Ok(())
 }
 

@@ -1,8 +1,6 @@
 mod routes;
 mod error;
 
-use std::sync::{RwLock, Arc};
-
 use actix_web::{HttpServer, App, web::{self, Data}, middleware::Logger};
 use diesel::{r2d2::ConnectionManager, PgConnection};
 use paris::info;

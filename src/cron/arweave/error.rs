@@ -9,7 +9,7 @@ pub enum ArweaveError {
 }
 
 impl From<anyhow::Error> for ArweaveError {
-    fn from(err: anyhow::Error) -> ArweaveError {
+    fn from(_err: anyhow::Error) -> ArweaveError {
         ArweaveError::UnknownErr
     }
 }

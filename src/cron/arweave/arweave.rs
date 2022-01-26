@@ -3,7 +3,7 @@ use paris::error;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
-use std::fs;
+
 use std::io::Write;
 use std::path::Path;
 use futures_util::StreamExt;
@@ -243,7 +243,7 @@ impl Arweave {
       owner,
       first.unwrap_or(100),
       match after {
-        None => format!(""),
+        None => String::new(),
         Some(a) => format!(r" after: {}", a)
       }
     );

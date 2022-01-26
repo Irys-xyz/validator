@@ -1,8 +1,6 @@
-use std::collections::HashSet;
-
 use actix_web::{HttpResponse, web::{Data, Json}};
 use bundlr_sdk::{deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER}, JWK, deep_hash_sync::deep_hash_sync};
-use bytes::Bytes;
+
 use data_encoding::{BASE64URL_NOPAD};
 use diesel::RunQueryDsl;
 use jsonwebkey::JsonWebKey;
@@ -12,7 +10,7 @@ use redis::AsyncCommands;
 use reool::{RedisPool, PoolDefault};
 use serde::{Serialize, Deserialize};
 
-use crate::{server::error::ValidatorServerError, types::DbPool, database::{schema::transactions::dsl::*, models::{Transaction, NewTransaction}}, consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER, VALIDATOR_ADDRESS}};
+use crate::{server::error::ValidatorServerError, types::DbPool, database::{schema::transactions::dsl::*, models::{NewTransaction}}, consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER, VALIDATOR_ADDRESS}};
 
 #[derive(Deserialize)]
 pub struct UnsignedBody {

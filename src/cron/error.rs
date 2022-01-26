@@ -10,7 +10,7 @@ pub enum ValidatorCronError {
 }
 
 impl From<anyhow::Error> for ValidatorCronError {
-    fn from(err: anyhow::Error) -> ValidatorCronError {
+    fn from(_err: anyhow::Error) -> ValidatorCronError {
         ValidatorCronError::AddressNotFound
     }
 }
