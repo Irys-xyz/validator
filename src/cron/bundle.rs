@@ -93,7 +93,9 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
         let file_path = arweave.get_tx_data(&arweave_tx.id).await;
         if file_path.is_ok() {
             info!("Verifying file: {}", &file_path.as_ref().unwrap());
-            let bundle_txs = match verify_file_bundle(file_path.unwrap()).await {
+            let path_str = file_path.unwrap().to_string();
+            let bundle_txs = 
+                match verify_file_bundle(path_str.clone()).await {
                 Err(r) => {
                     error!("{}", r);
                     Vec::new()
@@ -118,6 +120,11 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                         vote_slash(&bundler);
                     }
                 }
+            }
+
+            match std::fs::remove_file(path_str.clone()) {
+                Ok(r) => info!("Successfully deleted {}", path_str),
+                Err(err) => error!("Error deleting file {} : {}", path_str, err),
             }
         }
     }
