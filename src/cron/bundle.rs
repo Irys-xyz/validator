@@ -115,7 +115,10 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                 let tx_is_ok = verify_tx_receipt(&tx_receipt);
                 if tx_is_ok.unwrap() {
                     if tx_receipt.block <= current_block.unwrap() {
-                        insert_tx_in_db(&tx_receipt, current_block.unwrap());
+                        insert_tx_in_db(
+                            &tx_receipt,
+                            current_block.unwrap(),
+                            &bundle.id);
                     } else {
                         vote_slash(&bundler);
                     }
@@ -141,14 +144,19 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 }
 
 
-fn insert_tx_in_db(tx_receipt: &TxReceipt, block_included: i64) -> std::io::Result<()> {
+fn insert_tx_in_db(
+    tx_receipt: &TxReceipt,
+    block_included: i64,
+    bundle: &String
+) -> std::io::Result<()> {
     let new_tx = NewTransaction {
         id: tx_receipt.tx_id.clone(),
         epoch: 0, // TODO: implement epoch correctly
         block_promised: tx_receipt.block,
         block_actual: Some(block_included),
         signature: tx_receipt.signature.as_bytes().to_vec(),
-        validated: true
+        validated: true,
+        bundle_id: Some(bundle.to_string())
     };
 
     let conn = get_db_connection();
