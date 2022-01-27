@@ -15,11 +15,12 @@ use paris::{error, info};
 use serde::{Deserialize, Serialize};
 use lazy_static::lazy_static;
 use jsonwebkey::JsonWebKey;
-use crate::database::models::NewTransaction;
+use crate::database::models::{ NewTransaction, Transaction };
 use crate::database::schema::transactions;
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use super::error::ValidatorCronError;
+use crate::database::schema::transactions::dsl::*;
 
 #[derive(Default)]
 pub struct Bundler {
@@ -101,7 +102,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
             };
             
             for bundle_tx in bundle_txs {
-                let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(&bundle_tx).await {
+                let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(&bundle_tx.tx_id).await {
                     tx_receipt
                 } else if let Ok(tx_receipt) = tx_exists_on_peers(&bundle_tx.tx_id).await {
                     tx_receipt
@@ -153,15 +154,28 @@ fn insert_tx_in_db(tx_receipt: &TxReceipt, block_included: i64) -> std::io::Resu
 }
 
 // TODO: implement the database verification correctly
-async fn tx_exists_in_db(bundle_tx: &Item) -> Result<TxReceipt, ValidatorCronError> {
-    Ok(TxReceipt { 
-        block: 10,
-        tx_id: bundle_tx.tx_id.clone(),
-        signature: match String::from_utf8(bundle_tx.signature.clone()) {
-            Ok(s) => s,
-            Err(_) => String::new(),
-        },
-    })
+async fn tx_exists_in_db(tx_id: &String) -> Result<TxReceipt, ValidatorCronError> {
+    let conn = get_db_connection();
+    let result = transactions.filter(id.eq(tx_id))
+        .limit(1)
+        .load::<Transaction>(&conn)
+        .expect("Error loading transaction");
+
+    if result.first().is_none() {
+        return Err(ValidatorCronError::TxNotFound)
+    }
+
+    let tx = result.first().unwrap();
+    let tx_receipt = TxReceipt {
+        block: tx.block_promised,
+        tx_id: tx.id.clone(),
+        signature: match std::str::from_utf8(&tx.signature.to_vec()) {
+            Ok(v) => v.to_string(),
+            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+        }
+    };
+
+    Ok(tx_receipt)
 }
 
 async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError> {
