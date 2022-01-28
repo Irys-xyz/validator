@@ -1,6 +1,15 @@
 use diesel::Queryable;
 use serde::Serialize;
 use super::schema::transactions;
+use super::schema::bundle;
+
+#[derive(Serialize, Queryable, Insertable, Clone)]
+#[table_name = "bundle"]
+pub struct Bundle {
+    pub id: String,
+    pub owner_address: String,
+    pub block_height: i64
+}
 
 #[derive(Serialize, Queryable)]
 pub struct Transaction {
