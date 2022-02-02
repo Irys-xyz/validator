@@ -138,7 +138,7 @@ impl Arweave {
   }
 
   pub async fn get_tx_data(&self, transaction_id: &str) -> reqwest::Result<String> {
-    let raw_path = format!("./tx_data/{}", transaction_id);
+    let raw_path = format!("./bundles/{}", transaction_id);
     let file_path = Path::new(&raw_path);
     let mut buffer = 
       File::create(&file_path)

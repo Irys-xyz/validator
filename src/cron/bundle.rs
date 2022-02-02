@@ -14,12 +14,13 @@ use paris::{error, info};
 use serde::{Deserialize, Serialize};
 use lazy_static::lazy_static;
 use jsonwebkey::JsonWebKey;
-use crate::database::models::{ NewTransaction, Transaction, Bundle };
+use crate::database::models::{ NewTransaction, Transaction, NewBundle, Bundle };
 use crate::database::schema::{ transactions, bundle };
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use super::error::ValidatorCronError;
 use crate::database::schema::transactions::dsl::*;
+use crate::database::schema::bundle::dsl::*;
 
 #[derive(Default)]
 pub struct Bundler {
@@ -69,27 +70,31 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     }
 
     let txs_req = &txs_req.unwrap().0;
-    for bundle in txs_req {
+    for bundle_tx in txs_req {
         // TODO: Check seeded [?]
         // TODO: Download bundle [?]
-        let current_block = bundle.block.as_ref().map(|b| b.height);
+        let current_block = bundle_tx.block.as_ref().map(|b| b.height);
 
         if current_block.is_none() {
-            info!("Bundle {} not included in any block, moving on ...", &bundle.id);
+            info!("Bundle {} not included in any block, moving on ...", &bundle_tx.id);
             continue;
         } else {
-            info!("Bundle {} included in block {}", &bundle.id, current_block.unwrap());
-            match insert_bundle_in_db(Bundle {
-                id: bundle.id.clone(),
-                owner_address: bundler.address.clone(),
-                block_height: current_block.unwrap(),
-            }) {
-                Ok(()) => info!("Bundle {} successfully stored", &bundle.id),
-                Err(err) => error!("Error when storing bundle {} : {}", &bundle.id, err)
+            info!("Bundle {} included in block {}", &bundle_tx.id, current_block.unwrap());
+            let is_bundle_present = get_bundle(&bundle_tx.id).is_ok();
+            
+            if !is_bundle_present {
+                match insert_bundle_in_db(NewBundle {
+                    id: bundle_tx.id.clone(),
+                    owner_address: Some(bundler.address.clone()),
+                    block_height: current_block.unwrap(),
+                }) {
+                    Ok(()) => info!("Bundle {} successfully stored", &bundle_tx.id),
+                    Err(err) => error!("Error when storing bundle {} : {}", &bundle_tx.id, err)
+                }
             }
         }
 
-        let file_path = arweave.get_tx_data(&bundle.id).await;
+        let file_path = arweave.get_tx_data(&bundle_tx.id).await;
         if file_path.is_ok() {
             info!("Verifying file: {}", &file_path.as_ref().unwrap());
             let path_str = file_path.unwrap().to_string();
@@ -121,7 +126,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                             block_actual: current_block,
                             signature: tx_receipt.signature.as_bytes().to_vec(),
                             validated: true,
-                            bundle_id: Some(bundle.id.clone())
+                            bundle_id: Some(bundle_tx.tx_id.clone())
                         });
                     } else {
                         vote_slash(&bundler);
@@ -147,14 +152,25 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     Ok(())
 }
 
+fn get_bundle(
+    b_id: &String
+) -> std::io::Result<Bundle> {
+    let conn = get_db_connection();
+    let result = bundle.filter(bundle::id.eq(b_id))
+        .first::<Bundle>(&conn)
+        .expect("Error loading bundle");
+    
+    Ok(result)
+}
+
 fn insert_bundle_in_db(
-    bundle : Bundle
+    new_bundle : NewBundle
 ) -> std::io::Result<()> {
     let conn = get_db_connection();
     diesel::insert_into(bundle::table)
-        .values(&bundle)
+        .values(&new_bundle)
         .execute(&conn)
-        .unwrap_or_else(|_| panic!("Error inserting new bundle {}", &bundle.id));
+        .unwrap_or_else(|_| panic!("Error inserting new bundle {}", &new_bundle.id));
 
     Ok(())
 }
@@ -173,7 +189,7 @@ fn insert_tx_in_db(new_tx : &NewTransaction) -> std::io::Result<()> {
 // TODO: implement the database verification correctly
 async fn tx_exists_in_db(tx_id: &String) -> Result<TxReceipt, ValidatorCronError> {
     let conn = get_db_connection();
-    let result = transactions.filter(id.eq(tx_id))
+    let result = transactions.filter(transactions::id.eq(tx_id))
         .limit(1)
         .load::<Transaction>(&conn)
         .expect("Error loading transaction");
@@ -221,7 +237,6 @@ async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError
 
     Err(ValidatorCronError::TxNotFound)
 }
-
 
 fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     pub const BUNDLR_AS_BUFFER: &[u8] = "Bundlr".as_bytes();
