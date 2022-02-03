@@ -6,7 +6,7 @@ use crate::database::schema::{ transactions, bundle };
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::bundle::dsl::*;
 
-pub fn get_db_connection() -> PgConnection {
+fn get_db_connection() -> PgConnection {
   let db_url = std::env::var("DATABASE_URL").unwrap();
   
   PgConnection::establish(&db_url)

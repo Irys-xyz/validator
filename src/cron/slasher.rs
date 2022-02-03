@@ -1,5 +1,5 @@
-use super::error::ValidatorCronError;
+use super::{error::ValidatorCronError, bundle::Bundler};
 
-pub async fn check_for_slash() -> Result<(), ValidatorCronError> {
+fn vote_slash (_bundler: &Bundler) -> Result<(), ()> {
   Ok(())
 }

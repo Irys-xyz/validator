@@ -18,11 +18,12 @@ use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use crate::database::queries::*;
 use super::error::ValidatorCronError;
+use super::transactions::get_transactions;
 
 #[derive(Default)]
 pub struct Bundler {
-    address: String,
-    url: String
+    pub address: String,
+    pub url: String
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -32,11 +33,10 @@ pub struct TxReceipt {
     signature: String
 }
 
-
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
     Ok(Bundler { 
-                address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
-                url: "url".to_string()
+                address: "9DZg4c3jjvgVWajJc5gtPnbjbDqE86BWUeHkDdkG5Auv".to_string(),
+                url: "http://localhost:10000".to_string()
             })
 }
 
@@ -127,7 +127,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                             bundle_id: Some(bundle_tx.tx_id.clone())
                         });
                     } else {
-                        vote_slash(&bundler);
+                        // TODO: vote slash
                     }
                 }
             }
@@ -149,7 +149,6 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 
     Ok(())
 }
-
 
 async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError> {
     let client = Client::default();
@@ -217,6 +216,16 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     Ok(verifier.verify(&sig).unwrap_or(false))
 }
 
-fn vote_slash (_bundler: &Bundler) -> Result<(), ()> {
+pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCronError> {
+    let res = get_transactions(&bundler, Some(100), None).await;
+    let txs = match res {
+        Ok(r) => r.0,
+        Err(_) => Vec::new()
+    };
+
+    for tx in txs {
+        println!("{:?}", tx);
+    }
+
     Ok(())
 }

@@ -9,6 +9,11 @@ pub enum ValidatorCronError {
     NoBlockIncluded
 }
 
+#[derive(Debug, Display, Error, Clone)]
+pub enum TxsError {
+    TxNotFound,
+}
+
 impl From<anyhow::Error> for ValidatorCronError {
     fn from(_err: anyhow::Error) -> ValidatorCronError {
         ValidatorCronError::AddressNotFound
