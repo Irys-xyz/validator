@@ -1,3 +1,6 @@
 /target
 /tx_data
+/bundles
+/.vscode
+.env
 wallet.json

@@ -5,7 +5,6 @@ use bundlr_sdk::JWK;
 use bundlr_sdk::deep_hash_sync::{ deep_hash_sync, ONE_AS_BUFFER };
 use bundlr_sdk::{ verify::file::verify_file_bundle, deep_hash::DeepHashChunk };
 use data_encoding::BASE64URL_NOPAD;
-use diesel::prelude::*;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{Public, PKey};
 use openssl::rsa::Padding;
@@ -14,13 +13,11 @@ use paris::{error, info};
 use serde::{Deserialize, Serialize};
 use lazy_static::lazy_static;
 use jsonwebkey::JsonWebKey;
-use crate::database::models::{ NewTransaction, Transaction, NewBundle, Bundle };
-use crate::database::schema::{ transactions, bundle };
+use crate::database::models::{ NewTransaction, NewBundle };
 use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
+use crate::database::queries::*;
 use super::error::ValidatorCronError;
-use crate::database::schema::transactions::dsl::*;
-use crate::database::schema::bundle::dsl::*;
 
 #[derive(Default)]
 pub struct Bundler {
@@ -35,12 +32,6 @@ pub struct TxReceipt {
     signature: String
 }
 
-pub fn get_db_connection() -> PgConnection {
-    let db_url = std::env::var("DATABASE_URL").unwrap();
-    
-    PgConnection::establish(&db_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", db_url))
-}
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
     Ok(Bundler { 
@@ -108,8 +99,15 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
             };
             
             for bundle_tx in bundle_txs {
-                let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(&bundle_tx.tx_id).await {
-                    tx_receipt
+                let tx_receipt = if let Ok(tx) = get_tx(&bundle_tx.tx_id).await {
+                    TxReceipt {
+                        block: tx.block_promised,
+                        tx_id: tx.id,
+                        signature: match std::str::from_utf8(&tx.signature.to_vec()) {
+                            Ok(v) => v.to_string(),
+                            Err(e) => panic!("Invalid UTF-8 seq: {}", e)
+                        }
+                    }
                 } else if let Ok(tx_receipt) = tx_exists_on_peers(&bundle_tx.tx_id).await {
                     tx_receipt
                 } else {
@@ -152,64 +150,6 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     Ok(())
 }
 
-fn get_bundle(
-    b_id: &String
-) -> std::io::Result<Bundle> {
-    let conn = get_db_connection();
-    let result = bundle.filter(bundle::id.eq(b_id))
-        .first::<Bundle>(&conn)
-        .expect("Error loading bundle");
-    
-    Ok(result)
-}
-
-fn insert_bundle_in_db(
-    new_bundle : NewBundle
-) -> std::io::Result<()> {
-    let conn = get_db_connection();
-    diesel::insert_into(bundle::table)
-        .values(&new_bundle)
-        .execute(&conn)
-        .unwrap_or_else(|_| panic!("Error inserting new bundle {}", &new_bundle.id));
-
-    Ok(())
-}
-
-
-fn insert_tx_in_db(new_tx : &NewTransaction) -> std::io::Result<()> {
-    let conn = get_db_connection();
-    diesel::insert_into(transactions::table)
-        .values(new_tx)
-        .execute(&conn)
-        .unwrap_or_else(|_| panic!("Error inserting new tx {}", &new_tx.id));
-
-    Ok(())
-}
-
-// TODO: implement the database verification correctly
-async fn tx_exists_in_db(tx_id: &String) -> Result<TxReceipt, ValidatorCronError> {
-    let conn = get_db_connection();
-    let result = transactions.filter(transactions::id.eq(tx_id))
-        .limit(1)
-        .load::<Transaction>(&conn)
-        .expect("Error loading transaction");
-
-    if result.first().is_none() {
-        return Err(ValidatorCronError::TxNotFound)
-    }
-
-    let tx = result.first().unwrap();
-    let tx_receipt = TxReceipt {
-        block: tx.block_promised,
-        tx_id: tx.id.clone(),
-        signature: match std::str::from_utf8(&tx.signature.to_vec()) {
-            Ok(v) => v.to_string(),
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        }
-    };
-
-    Ok(tx_receipt)
-}
 
 async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError> {
     let client = Client::default();

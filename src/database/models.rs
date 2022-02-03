@@ -3,11 +3,18 @@ use serde::Serialize;
 use super::schema::transactions;
 use super::schema::bundle;
 
-#[derive(Serialize, Queryable, Insertable, Clone)]
-#[table_name = "bundle"]
+#[derive(Serialize, Queryable)]
 pub struct Bundle {
     pub id: String,
-    pub owner_address: String,
+    pub owner_address: Option<String>,
+    pub block_height: i64
+}
+
+#[derive (Insertable, Clone)]
+#[table_name = "bundle"]
+pub struct NewBundle {
+    pub id: String,
+    pub owner_address: Option<String>,
     pub block_height: i64
 }
 
