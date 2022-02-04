@@ -18,6 +18,7 @@ use crate::types::Validator;
 use crate::cron::arweave::arweave::Arweave;
 use crate::database::queries::*;
 use super::error::ValidatorCronError;
+use super::slasher::vote_slash;
 use super::transactions::get_transactions;
 
 #[derive(Default)]
@@ -224,7 +225,12 @@ pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCron
     };
 
     for tx in txs {
-        println!("{:?}", tx);
+        // TODO: validate transacitons
+        let block_ok = tx.current_block < tx.expected_block;
+
+        if block_ok {
+            let res = vote_slash(&bundler);
+        }
     }
 
     Ok(())
