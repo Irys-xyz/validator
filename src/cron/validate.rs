@@ -1,5 +1,5 @@
 use super::error::ValidatorCronError;
-use super::bundle::{validate_bundler, get_bundler, Bundler};
+use super::bundle::{validate_bundler, get_bundler};
 
 pub async fn validate() -> Result<(), ValidatorCronError> {
   let bundler = get_bundler().await?;
@@ -16,4 +16,3 @@ pub async fn validate_transactions() -> Result<(), ValidatorCronError> {
 
   Ok(())
 }
-  

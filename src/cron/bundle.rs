@@ -125,7 +125,8 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                             block_actual: current_block,
                             signature: tx_receipt.signature.as_bytes().to_vec(),
                             validated: true,
-                            bundle_id: Some(bundle_tx.tx_id.clone())
+                            bundle_id: Some(bundle_tx.tx_id.clone()),
+                            sent_to_leader: false
                         });
                     } else {
                         // TODO: vote slash

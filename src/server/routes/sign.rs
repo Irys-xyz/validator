@@ -77,7 +77,8 @@ pub async fn sign_route(db: Data<DbPool>, redis: Data<RedisPool>, body: Json<Uns
         block_actual: None,
         signature: sig.clone(),
         validated: false,
-        bundle_id: None
+        bundle_id: None,
+        sent_to_leader: false
     };
 
     actix_rt::task::spawn_blocking(move || {

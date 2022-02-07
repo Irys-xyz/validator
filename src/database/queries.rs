@@ -56,3 +56,13 @@ pub async fn get_tx(tx_id: &String) -> std::io::Result<Transaction> {
 
   Ok(result)
 }
+
+pub async fn get_unposted_txs() -> std::io::Result<Vec<Transaction>> {
+  let conn = get_db_connection();
+  let result = transactions.filter(transactions::sent_to_leader.eq(false))
+      .limit(25)
+      .load::<Transaction>(&conn)
+      .expect("Error loading transactions");
+
+  Ok(result)
+}

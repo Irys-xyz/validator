@@ -21,6 +21,7 @@ table! {
         signature -> Bytea,
         validated -> Bool,
         bundle_id -> Nullable<Bpchar>,
+        sent_to_leader -> Bool,
     }
 }
 

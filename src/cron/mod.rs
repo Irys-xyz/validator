@@ -4,6 +4,7 @@ mod validate;
 mod contract;
 mod slasher;
 mod transactions;
+mod leader;
 pub mod arweave;
 
 use std::time::Duration;
@@ -19,7 +20,8 @@ pub async fn run_crons() {
     join!(
         //create_cron("update contract", contract::update_contract, 30),
         create_cron("validate bundler", validate::validate, 2 * 60),
-        create_cron("validate transactions", validate::validate_transactions , 30)
+        create_cron("validate transactions", validate::validate_transactions , 30),
+        create_cron("send transactions to leader", leader::send_txs_to_leader, 60)
     );
 }
 

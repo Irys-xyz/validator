@@ -26,7 +26,8 @@ pub struct Transaction {
     pub block_actual: Option<i64>,
     pub signature: Vec<u8>,
     pub validated: bool,
-    pub bundle_id: Option<String>
+    pub bundle_id: Option<String>,
+    pub sent_to_leader: bool
 }
 
 #[derive(Insertable, Clone)]
@@ -38,5 +39,6 @@ pub struct NewTransaction {
     pub block_actual: Option<i64>,
     pub signature: Vec<u8>,
     pub validated: bool,
-    pub bundle_id: Option<String>
+    pub bundle_id: Option<String>,
+    pub sent_to_leader: bool
 }
