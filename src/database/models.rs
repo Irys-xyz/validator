@@ -1,4 +1,4 @@
-use diesel::Queryable;
+use diesel::{ Queryable, Insertable };
 use serde::Serialize;
 use super::schema::transactions;
 use super::schema::bundle;
@@ -30,7 +30,7 @@ pub struct Transaction {
     pub sent_to_leader: bool
 }
 
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, AsChangeset)]
 #[table_name = "transactions"]
 pub struct NewTransaction {
     pub id: String,

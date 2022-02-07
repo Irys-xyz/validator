@@ -1,4 +1,7 @@
-use crate::database::queries::get_unposted_txs;
+use tracing::error;
+
+use crate::database::queries::{get_unposted_txs, update_tx};
+use crate::database::models::NewTransaction;
 use super::error::ValidatorCronError;
 
 #[derive(Default)]
@@ -29,6 +32,23 @@ pub async fn post_transactions() -> std::io::Result<()> {
       .json(&tx)
       .send()
       .await;
+
+    if req.is_ok() {
+      let update = update_tx(&NewTransaction{
+        id: tx.id,
+        epoch: tx.epoch,
+        block_promised: tx.block_promised,
+        block_actual: tx.block_actual,
+        signature: tx.signature,
+        validated: tx.validated,
+        bundle_id: tx.bundle_id,
+        sent_to_leader: true
+      }).await;
+
+      if let Err(e) = update {
+        error!("Error updating tx in database: {}", e);
+      }
+    }
   }
 
   Ok(())

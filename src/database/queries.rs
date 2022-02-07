@@ -47,6 +47,16 @@ pub fn insert_tx_in_db(new_tx : &NewTransaction) -> std::io::Result<()> {
   Ok(())
 }
 
+pub async fn update_tx(tx : &NewTransaction) -> std::io::Result<()> {
+  let conn = get_db_connection();
+  diesel::update(transactions::table.find(&tx.id))
+        .set(&*tx)
+        .get_result::<Transaction>(&conn)
+        .expect(&format!("Unable to find transaction {}", &tx.id));
+
+  Ok(())
+}
+
 // TODO: implement the database verification correctly
 pub async fn get_tx(tx_id: &String) -> std::io::Result<Transaction> {
   let conn = get_db_connection();
