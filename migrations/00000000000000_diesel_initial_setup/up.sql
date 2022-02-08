@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     signature bytea NOT NULL,
     validated bool NOT NULL,
     bundle_id CHAR(43) REFERENCES bundle(id),
+    sent_to_leader bool NOT NULL,
     PRIMARY KEY (id)
 );
 
