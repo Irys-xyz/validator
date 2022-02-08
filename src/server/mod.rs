@@ -1,14 +1,18 @@
-mod routes;
 mod error;
+mod routes;
 
-use actix_web::{HttpServer, App, web::{self, Data}, middleware::Logger};
+use actix_web::{
+    middleware::Logger,
+    web::{self, Data},
+    App, HttpServer,
+};
+use diesel::r2d2::Pool;
 use diesel::{r2d2::ConnectionManager, PgConnection};
 use paris::info;
 use reool::RedisPool;
 use routes::get_tx::get_tx;
-use routes::post_tx::post_tx;
 use routes::index::index;
-use diesel::r2d2::Pool;
+use routes::post_tx::post_tx;
 use tokio::runtime::Handle;
 
 use crate::server::routes::sign::sign_route;
@@ -19,7 +23,9 @@ pub async fn run_server() -> std::io::Result<()> {
     env_logger::init();
     info!("Starting up HTTP server...");
 
-    let port = std::env::var("PORT").map(|s| s.parse::<u16>().unwrap()).unwrap_or(10000);
+    let port = std::env::var("PORT")
+        .map(|s| s.parse::<u16>().unwrap())
+        .unwrap_or(10000);
     let redis_connection_string = std::env::var("REDIS_CONNECTION_URL").unwrap();
     info!("Starting up HTTP server...");
 
@@ -37,10 +43,7 @@ pub async fn run_server() -> std::io::Result<()> {
             .finish_redis_rs()
             .unwrap();
 
-        let postgres_pool = Pool::builder()
-            .max_size(10)
-            .build(conn_manager)
-            .unwrap();
+        let postgres_pool = Pool::builder().max_size(10).build(conn_manager).unwrap();
 
         App::new()
             .app_data(Data::new(redis_pool))

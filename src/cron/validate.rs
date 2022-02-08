@@ -1,18 +1,18 @@
+use super::bundle::{get_bundler, validate_bundler};
 use super::error::ValidatorCronError;
-use super::bundle::{validate_bundler, get_bundler};
 
 pub async fn validate() -> Result<(), ValidatorCronError> {
-  let bundler = get_bundler().await?;
+    let bundler = get_bundler().await?;
 
-  validate_bundler(bundler).await?;
+    validate_bundler(bundler).await?;
 
-  Ok(())
-} 
+    Ok(())
+}
 
 pub async fn validate_transactions() -> Result<(), ValidatorCronError> {
-  let bundler  = get_bundler().await?;
+    let bundler = get_bundler().await?;
 
-  super::bundle::validate_transactions(bundler).await?;
+    super::bundle::validate_transactions(bundler).await?;
 
-  Ok(())
+    Ok(())
 }

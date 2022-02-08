@@ -1,23 +1,40 @@
-use actix_web::{HttpResponse, web::{Data, Json}};
-use bundlr_sdk::{deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER}, JWK, deep_hash_sync::deep_hash_sync};
+use actix_web::{
+    web::{Data, Json},
+    HttpResponse,
+};
+use bundlr_sdk::{
+    deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER},
+    deep_hash_sync::deep_hash_sync,
+    JWK,
+};
 
-use data_encoding::{BASE64URL_NOPAD};
+use data_encoding::BASE64URL_NOPAD;
 use diesel::RunQueryDsl;
 use jsonwebkey::JsonWebKey;
 use lazy_static::lazy_static;
-use openssl::{sign, hash::MessageDigest, rsa::Padding, pkey::{PKey, Private, Public}};
+use openssl::{
+    hash::MessageDigest,
+    pkey::{PKey, Private, Public},
+    rsa::Padding,
+    sign,
+};
 use redis::AsyncCommands;
-use reool::{RedisPool, PoolDefault};
-use serde::{Serialize, Deserialize};
+use reool::{PoolDefault, RedisPool};
+use serde::{Deserialize, Serialize};
 
-use crate::{server::error::ValidatorServerError, types::DbPool, database::{schema::transactions::dsl::*, models::{NewTransaction}}, consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER, VALIDATOR_ADDRESS}};
+use crate::{
+    consts::{BUNDLR_AS_BUFFER, VALIDATOR_ADDRESS, VALIDATOR_AS_BUFFER},
+    database::{models::NewTransaction, schema::transactions::dsl::*},
+    server::error::ValidatorServerError,
+    types::DbPool,
+};
 
 #[derive(Deserialize)]
 pub struct UnsignedBody {
     id: String,
     signature: String,
     block: u128,
-    validators: Vec<String>
+    validators: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -27,7 +44,7 @@ struct SignedBody {
     signature: String,
     block: u128,
     validator_address: String,
-    validator_signature: String
+    validator_signature: String,
 }
 
 lazy_static! {
@@ -35,18 +52,23 @@ lazy_static! {
         let var = BASE64URL_NOPAD.decode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes());
         var.unwrap()
     };
-    static ref BUNDLER_ADDRESS: String = BASE64URL_NOPAD.encode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes());
+    static ref BUNDLER_ADDRESS: String =
+        BASE64URL_NOPAD.encode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes());
 }
 
-pub async fn sign_route(db: Data<DbPool>, redis: Data<RedisPool>, body: Json<UnsignedBody>) -> actix_web::Result<HttpResponse, ValidatorServerError> {
+pub async fn sign_route(
+    db: Data<DbPool>,
+    redis: Data<RedisPool>,
+    body: Json<UnsignedBody>,
+) -> actix_web::Result<HttpResponse, ValidatorServerError> {
     let body = body.into_inner();
 
-    let mut conn = redis.check_out(PoolDefault)
-        .await
-        .unwrap();
+    let mut conn = redis.check_out(PoolDefault).await.unwrap();
 
     // Verify
-    if conn.exists(&body.id).await.unwrap() { return Ok(HttpResponse::Accepted().finish()); };
+    if conn.exists(&body.id).await.unwrap() {
+        return Ok(HttpResponse::Accepted().finish());
+    };
     let current_block = conn.get::<_, u128>(&body.id).await.unwrap();
 
     if !body.validators.contains(&VALIDATOR_ADDRESS) {
@@ -56,20 +78,17 @@ pub async fn sign_route(db: Data<DbPool>, redis: Data<RedisPool>, body: Json<Uns
     if body.block < (current_block - 5) || body.block > (current_block + 5) {
         return Ok(HttpResponse::BadRequest().finish());
     }
-    
+
     if !verify_body(&body) {
         return Ok(HttpResponse::BadRequest().finish());
     };
 
     // Sign
-    let sig = sign_body(body.id.as_str(), BUNDLER_ADDRESS.as_str())
-        .await;
+    let sig = sign_body(body.id.as_str(), BUNDLER_ADDRESS.as_str()).await;
 
     // Add to db
-    let current_epoch = conn.get::<_, i64>("validator:epoch:current")
-        .await
-        .unwrap();
-        
+    let current_epoch = conn.get::<_, i64>("validator:epoch:current").await.unwrap();
+
     let new_transaction = NewTransaction {
         id: body.id,
         epoch: current_epoch,
@@ -78,7 +97,7 @@ pub async fn sign_route(db: Data<DbPool>, redis: Data<RedisPool>, body: Json<Uns
         signature: sig.clone(),
         validated: false,
         bundle_id: None,
-        sent_to_leader: false
+        sent_to_leader: false,
     };
 
     actix_rt::task::spawn_blocking(move || {
@@ -86,8 +105,8 @@ pub async fn sign_route(db: Data<DbPool>, redis: Data<RedisPool>, body: Json<Uns
         diesel::insert_into(transactions)
             .values::<NewTransaction>(new_transaction)
             .execute(&c)
-    }).await??;
-   
+    })
+    .await??;
 
     Ok(HttpResponse::Ok()
         .insert_header(("Content-Type", "application/octet-stream"))
@@ -95,9 +114,7 @@ pub async fn sign_route(db: Data<DbPool>, redis: Data<RedisPool>, body: Json<Uns
 }
 
 fn verify_body(body: &UnsignedBody) -> bool {
-    let block = body.block.to_string()
-        .as_bytes()
-        .to_vec();
+    let block = body.block.to_string().as_bytes().to_vec();
 
     let tx_id = body.id.as_bytes().to_vec();
 
@@ -105,20 +122,21 @@ fn verify_body(body: &UnsignedBody) -> bool {
         DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
         DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
         DeepHashChunk::Chunk(tx_id.into()),
-        DeepHashChunk::Chunk(block.into())
-    ])).unwrap();
+        DeepHashChunk::Chunk(block.into()),
+    ]))
+    .unwrap();
 
     lazy_static! {
         static ref PUBLIC: PKey<Public> = {
             let jwk = JWK {
                 kty: "RSA",
                 e: "AQAB",
-                n: std::env::var("BUNDLER_PUBLIC").unwrap()
+                n: std::env::var("BUNDLER_PUBLIC").unwrap(),
             };
 
             let p = serde_json::to_string(&jwk).unwrap();
             let key: JsonWebKey = p.parse().unwrap();
-            
+
             PKey::public_key_from_der(key.key.to_der().as_slice()).unwrap()
         };
     };
@@ -133,18 +151,20 @@ fn verify_body(body: &UnsignedBody) -> bool {
 
 async fn sign_body(tx_id: &str, bundler_address: &str) -> Vec<u8> {
     let tx_id = tx_id.as_bytes().to_vec();
-    
+
     let message = deep_hash(DeepHashChunk::Chunks(vec![
         DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
         DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
         DeepHashChunk::Chunk(tx_id.into()),
-        DeepHashChunk::Chunk(bundler_address.to_string().into())
+        DeepHashChunk::Chunk(bundler_address.to_string().into()),
     ]))
-        .await.unwrap();
+    .await
+    .unwrap();
 
     lazy_static! {
         static ref KEY: PKey<Private> = {
-            let file: String = String::from_utf8(include_bytes!("../../../wallet.json").to_vec()).unwrap();
+            let file: String =
+                String::from_utf8(include_bytes!("../../../wallet.json").to_vec()).unwrap();
             let key: JsonWebKey = file.parse().unwrap();
             let pem = key.key.to_pem();
             PKey::private_key_from_pem(pem.as_bytes()).unwrap()
@@ -154,17 +174,16 @@ async fn sign_body(tx_id: &str, bundler_address: &str) -> Vec<u8> {
     let mut signer = sign::Signer::new(MessageDigest::sha256(), &KEY).unwrap();
     signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
     signer.update(&message).unwrap();
-    let mut sig = vec![0;512];
+    let mut sig = vec![0; 512];
     signer.sign(&mut sig).unwrap();
 
     sig
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::{sign_body, verify_body};
     use super::UnsignedBody;
+    use super::{sign_body, verify_body};
 
     #[test]
     fn test_sign() {
@@ -183,6 +202,12 @@ mod tests {
     #[actix_rt::test]
     async fn test_verify() {
         dotenv::dotenv();
-        dbg!(sign_body("dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk", "YPGBC5bssYfEmF5t4rHDiVRF3dfx1OCobOdJEl70SX8").await);
+        dbg!(
+            sign_body(
+                "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk",
+                "YPGBC5bssYfEmF5t4rHDiVRF3dfx1OCobOdJEl70SX8"
+            )
+            .await
+        );
     }
 }

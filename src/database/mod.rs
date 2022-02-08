@@ -1,3 +1,3 @@
 pub mod models;
-pub mod schema;
 pub mod queries;
+pub mod schema;

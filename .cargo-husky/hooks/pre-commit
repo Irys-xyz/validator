@@ -11,3 +11,5 @@ echo '+cargo test'
 cargo test
 echo '+cargo clippy'
 cargo clippy
+echo '+cargo format'
+cargo fmt

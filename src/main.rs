@@ -1,17 +1,16 @@
-
 #[macro_use]
 extern crate diesel;
 
-mod server;
-mod cron;
 mod bundle;
-mod database;
-mod types;
 mod consts;
+mod cron;
+mod database;
+mod server;
+mod types;
 
-use std::collections::HashSet;
-use server::run_server;
 use cron::run_crons;
+use server::run_server;
+use std::collections::HashSet;
 
 #[actix_web::main]
 async fn main() -> () {
@@ -27,7 +26,6 @@ async fn main() -> () {
         paris::info!("Running with cron");
         tokio::task::spawn_local(run_crons());
     } else {
-
     };
 
     if !set.contains("--no-server") {
