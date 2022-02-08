@@ -1,3 +1,4 @@
+use serde::Serialize;
 use tracing::error;
 
 use crate::database::queries::{get_unposted_txs, update_tx};
@@ -8,6 +9,21 @@ use super::error::ValidatorCronError;
 pub struct Validator {
     pub address: String,
     pub url: String
+}
+
+#[derive(Serialize)]
+pub struct ValidatorSignature {
+  public: String,
+  signature: String
+}
+
+#[derive(Serialize)]
+pub struct ReqBody {
+  id: String,
+  signature: String,
+  block: i64,
+  address: String,
+  validator_signatures: Vec<ValidatorSignature>
 }
 
 pub async fn send_txs_to_leader() -> Result<(), ValidatorCronError> {
@@ -29,7 +45,13 @@ pub async fn post_transactions() -> std::io::Result<()> {
 
   for tx in txs {
     let req = client.post(format!("{}/{}", &leader.url, "tx"))
-      .json(&tx)
+      .json(&ReqBody {
+        id: tx.id.clone(),
+        signature: String::from_utf8(tx.signature.clone()).unwrap(),
+        block: tx.block_actual.unwrap(),
+        address: String::from("address"), // TODO: get this address
+        validator_signatures: Vec::new(),
+      })
       .send()
       .await;
 
