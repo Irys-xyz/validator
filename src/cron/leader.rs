@@ -27,7 +27,7 @@ pub struct ReqBody {
 }
 
 pub async fn send_txs_to_leader() -> Result<(), ValidatorCronError> {
-  let res = post_transactions().await;
+  let _res = post_transactions().await;
   Ok(())
 }
 

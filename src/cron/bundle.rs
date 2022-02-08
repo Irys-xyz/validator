@@ -135,7 +135,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
             }
 
             match std::fs::remove_file(path_str.clone()) {
-                Ok(r) => info!("Successfully deleted {}", path_str),
+                Ok(_r) => info!("Successfully deleted {}", path_str),
                 Err(err) => error!("Error deleting file {} : {}", path_str, err),
             }
         }
@@ -230,7 +230,7 @@ pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCron
         let block_ok = tx.current_block < tx.expected_block;
 
         if block_ok {
-            let res = vote_slash(&bundler);
+            let _res = vote_slash(&bundler);
         }
     }
 
