@@ -1,0 +1,24 @@
+# Validator
+
+Validators in Bundlr's Network monitor a single Bundlr node and validates transactions received by it. If a Bundlr does not comply with the newtork (i.e send a transaction later than its promised block), its the validator job to spot, notify other validators, and vote slash for this Bundlr Node stake.
+
+## States
+Each validator can have three states:
+
+### Validating
+When in this state, it will:
+- Query all recent transactions from a single Bundlr Node.
+- Check if they signature matches and if they are included in Arweave by expected block.
+- If one transaction is expired, it will report to other validators and initiate a voting to slash its Node stake.
+- Gossip received transactions to other validators from same Bundlr Node.
+- Repeat until end of epoch
+
+
+### Leading
+There can only be one Leader in the network. When in this state, the validator will:
+- Receive signed transactions from other validators
+- Aggregate transaction receipts
+- Generate a chain report by the end of epoch
+
+### Idle
+If a validator is not selected to validate in that epoch, it will remain idle and outside of the network.
