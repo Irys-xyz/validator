@@ -79,16 +79,21 @@ pub async fn get_transactions(
     let res = client.post(&url).json(&body.unwrap()).send().await;
 
     if res.is_ok() {
-        let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();
-        let mut txs = Vec::<BundleTransaction>::new();
-        let mut end_cursor: Option<String> = None;
-        for tx in &res.data.transaction.edges {
-            txs.push(tx.node.clone());
-            end_cursor = Some(tx.cursor.clone());
+        let res = res.unwrap().json::<GraphqlQueryResponse>().await;
+        if res.is_ok() {
+            let res = res.unwrap();
+            let mut txs = Vec::<BundleTransaction>::new();
+            let mut end_cursor: Option<String> = None;
+            for tx in &res.data.transaction.edges {
+                txs.push(tx.node.clone());
+                end_cursor = Some(tx.cursor.clone());
+            }
+            let has_next_page = res.data.transaction.pageInfo.hasNextPage;
+            return Ok((txs, has_next_page, end_cursor));
+        } else {
+            return Err(TxsError::TxNotFound);
         }
-        let has_next_page = res.data.transaction.pageInfo.hasNextPage;
 
-        return Ok((txs, has_next_page, end_cursor));
     }
 
     Err(TxsError::TxNotFound)
