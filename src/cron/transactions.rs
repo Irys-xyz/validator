@@ -93,7 +93,6 @@ pub async fn get_transactions(
         } else {
             return Err(TxsError::TxNotFound);
         }
-
     }
 
     Err(TxsError::TxNotFound)
