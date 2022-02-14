@@ -4,6 +4,7 @@ mod contract;
 mod error;
 mod leader;
 mod slasher;
+mod state;
 mod transactions;
 mod validate;
 
