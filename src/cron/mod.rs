@@ -13,31 +13,39 @@ use std::time::Duration;
 use futures::{join, Future};
 use paris::{error, info};
 
-use self::error::ValidatorCronError;
+use crate::cron::state::generate_state;
+
+use self::{error::ValidatorCronError, state::SharedValidatorState};
 
 // Update contract state
 pub async fn run_crons() {
+    let state = generate_state();
     info!("Validator starting ...");
     join!(
         //create_cron("update contract", contract::update_contract, 30),
-        create_cron("validate bundler", validate::validate, 2 * 60),
-        create_cron("validate transactions", validate::validate_transactions, 30),
+        create_cron("validate bundler", validate::validate, 2 * 60, &state),
+        create_cron("validate transactions", validate::validate_transactions, 30, &state),
         create_cron(
             "send transactions to leader",
             leader::send_txs_to_leader,
-            60
+            60,
+            &state
         )
     );
 }
 
-async fn create_cron<F>(description: &'static str, f: impl Fn() -> F + 'static, sleep: u64)
+async fn create_cron<F>(
+    description: &'static str,
+    f: impl Fn(&SharedValidatorState) -> F + 'static,
+    sleep: u64,
+    shared_state : &SharedValidatorState)
 where
     F: Future<Output = Result<(), ValidatorCronError>> + 'static,
     F::Output: 'static,
 {
     loop {
         info!("Task running - {}", description);
-        match f().await {
+        match f(shared_state).await {
             Ok(_) => info!("Task finished - {}", description),
             Err(e) => error!("Task error - {} with {}", description, e),
         };

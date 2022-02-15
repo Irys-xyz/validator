@@ -2,6 +2,7 @@ use serde::Serialize;
 use tracing::error;
 
 use super::error::ValidatorCronError;
+use super::state::SharedValidatorState;
 use crate::database::models::NewTransaction;
 use crate::database::queries::{get_unposted_txs, update_tx};
 
@@ -26,7 +27,7 @@ pub struct ReqBody {
     validator_signatures: Vec<ValidatorSignature>,
 }
 
-pub async fn send_txs_to_leader() -> Result<(), ValidatorCronError> {
+pub async fn send_txs_to_leader(state: &SharedValidatorState) -> Result<(), ValidatorCronError> {
     let _res = post_transactions().await;
     Ok(())
 }
