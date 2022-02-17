@@ -1,20 +1,12 @@
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, RwLock};
+use atomic_enum::atomic_enum;
+use std::sync::Arc;
 
-enum ValidatorState {
-    Leader,
+#[atomic_enum]
+#[derive(PartialEq)]
+pub enum ValidatorState {
+    Leader = 0,
     Cosigner,
     Idle,
 }
 
-pub struct SharedValidatorState {
-    revision: Arc<AtomicUsize>,
-    data: RwLock<ValidatorState>,
-}
-
-pub fn generate_state() -> SharedValidatorState {
-    SharedValidatorState {
-        revision: Arc::new(AtomicUsize::new(0)),
-        data: RwLock::new(ValidatorState::Idle),
-    }
-}
+pub type SharedValidatorState = Arc<AtomicValidatorState>;
