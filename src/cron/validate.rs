@@ -2,7 +2,7 @@ use super::bundle::{get_bundler, validate_bundler};
 use super::error::ValidatorCronError;
 use super::state::SharedValidatorState;
 
-pub async fn validate(state: &SharedValidatorState) -> Result<(), ValidatorCronError> {
+pub async fn validate(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
     let bundler = get_bundler().await?;
 
     validate_bundler(bundler).await?;
@@ -10,7 +10,7 @@ pub async fn validate(state: &SharedValidatorState) -> Result<(), ValidatorCronE
     Ok(())
 }
 
-pub async fn validate_transactions(state: &SharedValidatorState) -> Result<(), ValidatorCronError> {
+pub async fn validate_transactions(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
     let bundler = get_bundler().await?;
 
     super::bundle::validate_transactions(bundler).await?;

@@ -10,3 +10,7 @@ pub enum ValidatorState {
 }
 
 pub type SharedValidatorState = Arc<AtomicValidatorState>;
+
+pub fn generate_state() -> SharedValidatorState {
+    Arc::new(AtomicValidatorState::new(ValidatorState::Cosigner))
+}
