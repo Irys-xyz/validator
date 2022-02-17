@@ -4,20 +4,18 @@ mod contract;
 mod error;
 mod leader;
 mod slasher;
-mod state;
 mod transactions;
 mod validate;
 
-use self::{error::ValidatorCronError, state::SharedValidatorState};
-use crate::cron::state::generate_state;
+use crate::state::SharedValidatorState;
 use futures::{join, Future};
 use paris::{error, info};
 use std::time::Duration;
 
-// Update contract state
-pub async fn run_crons() {
-    let state = generate_state();
+use self::error::ValidatorCronError;
 
+// Update contract state
+pub async fn run_crons(state: SharedValidatorState) {
     info!("Validator starting ...");
     join!(
         //create_cron("update contract", contract::update_contract, 30),

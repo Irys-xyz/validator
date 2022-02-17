@@ -6,16 +6,19 @@ mod consts;
 mod cron;
 mod database;
 mod server;
+mod state;
 mod types;
 
 use cron::run_crons;
 use server::run_server;
+use state::generate_state;
 use std::collections::HashSet;
 
 #[actix_web::main]
 async fn main() -> () {
     dotenv::dotenv().unwrap();
     std::env::set_var("RUST_LOG", "RUST_LOG=info,sqlx=warn,a=debug");
+    let state = generate_state();
 
     let mut set = HashSet::new();
     for arg in std::env::args() {
@@ -24,7 +27,7 @@ async fn main() -> () {
 
     if !set.contains("--no-cron") {
         paris::info!("Running with cron");
-        tokio::task::spawn_local(run_crons());
+        tokio::task::spawn_local(run_crons(state));
     } else {
     };
 

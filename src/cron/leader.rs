@@ -2,9 +2,9 @@ use serde::Serialize;
 use tracing::error;
 
 use super::error::ValidatorCronError;
-use super::state::SharedValidatorState;
 use crate::database::models::NewTransaction;
 use crate::database::queries::{get_unposted_txs, update_tx};
+use crate::state::SharedValidatorState;
 
 #[derive(Default)]
 pub struct Validator {

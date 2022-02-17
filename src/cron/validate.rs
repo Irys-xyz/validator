@@ -1,6 +1,7 @@
+use crate::state::SharedValidatorState;
+
 use super::bundle::{get_bundler, validate_bundler};
 use super::error::ValidatorCronError;
-use super::state::SharedValidatorState;
 
 pub async fn validate(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
     let bundler = get_bundler().await?;
