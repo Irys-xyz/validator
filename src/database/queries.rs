@@ -1,4 +1,5 @@
 use diesel::prelude::*;
+use diesel::result::Error;
 use diesel::{Connection, PgConnection, QueryDsl};
 extern crate diesel;
 use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
@@ -12,14 +13,9 @@ fn get_db_connection() -> PgConnection {
     PgConnection::establish(&db_url).unwrap_or_else(|_| panic!("Error connecting to {}", db_url))
 }
 
-pub fn get_bundle(b_id: &String) -> std::io::Result<Bundle> {
+pub fn get_bundle(b_id: &String) -> Result<Bundle, Error> {
     let conn = get_db_connection();
-    let result = bundle
-        .filter(bundle::id.eq(b_id))
-        .first::<Bundle>(&conn)
-        .expect("Error loading bundle");
-
-    Ok(result)
+    bundle.filter(bundle::id.eq(b_id)).first::<Bundle>(&conn)
 }
 
 pub fn insert_bundle_in_db(new_bundle: NewBundle) -> std::io::Result<()> {
@@ -53,23 +49,17 @@ pub async fn update_tx(tx: &NewTransaction) -> std::io::Result<()> {
 }
 
 // TODO: implement the database verification correctly
-pub async fn get_tx(tx_id: &String) -> std::io::Result<Transaction> {
+pub async fn get_tx(tx_id: &String) -> Result<Transaction, Error> {
     let conn = get_db_connection();
-    let result = transactions
+    transactions
         .filter(transactions::id.eq(tx_id))
         .first::<Transaction>(&conn)
-        .expect("Error loading transaction");
-
-    Ok(result)
 }
 
-pub async fn get_unposted_txs() -> std::io::Result<Vec<Transaction>> {
+pub async fn get_unposted_txs() -> Result<Vec<Transaction>, Error> {
     let conn = get_db_connection();
-    let result = transactions
+    transactions
         .filter(transactions::sent_to_leader.eq(false))
         .limit(25)
         .load::<Transaction>(&conn)
-        .expect("Error loading transactions");
-
-    Ok(result)
 }

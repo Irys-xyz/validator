@@ -36,8 +36,8 @@ pub struct TxReceipt {
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
     Ok(Bundler {
-        address: "9DZg4c3jjvgVWajJc5gtPnbjbDqE86BWUeHkDdkG5Auv".to_string(),
-        url: "http://localhost:10000".to_string(),
+        address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
+        url: "https://node1.bundlr.network/".to_string(),
     })
 }
 
@@ -51,14 +51,6 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
         error!(
             "Error occurred while getting txs from bundler address: \n {}. Error: {}",
             bundler.address, r
-        );
-        return Err(ValidatorCronError::TxsFromAddressNotFound);
-    }
-
-    if txs_req.is_err() {
-        error!(
-            "Error occurred while getting txs from bundler address: \n {}.",
-            bundler.address
         );
         return Err(ValidatorCronError::TxsFromAddressNotFound);
     }
@@ -108,21 +100,29 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
             };
 
             for bundle_tx in bundle_txs {
-                let tx_receipt = if let Ok(tx) = get_tx(&bundle_tx.tx_id).await {
-                    TxReceipt {
+                info!("Verifying bundle_tx: {}", &bundle_tx.tx_id);
+
+                let tx = get_tx(&bundle_tx.tx_id).await;
+                let mut tx_receipt: Option<TxReceipt> = None;
+                if tx.is_err() {
+                    let peer_tx = tx_exists_on_peers(&bundle_tx.tx_id).await;
+                    if peer_tx.is_ok() {
+                        tx_receipt = Some(peer_tx.unwrap());
+                    }
+                } else {
+                    let tx = tx.unwrap();
+                    tx_receipt = Some(TxReceipt {
                         block: tx.block_promised,
                         tx_id: tx.id,
                         signature: match std::str::from_utf8(&tx.signature.to_vec()) {
                             Ok(v) => v.to_string(),
                             Err(e) => panic!("Invalid UTF-8 seq: {}", e),
                         },
-                    }
-                } else if let Ok(tx_receipt) = tx_exists_on_peers(&bundle_tx.tx_id).await {
-                    tx_receipt
-                } else {
-                    continue;
-                };
+                    });
+                }
 
+                info!("Tx receipt: {:?}", &tx_receipt);
+                /*
                 let tx_is_ok = verify_tx_receipt(&tx_receipt);
                 if tx_is_ok.unwrap() {
                     if tx_receipt.block <= current_block.unwrap() {
@@ -140,6 +140,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
                         // TODO: vote slash
                     }
                 }
+                */
             }
 
             match std::fs::remove_file(path_str.clone()) {

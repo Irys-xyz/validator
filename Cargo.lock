@@ -338,7 +338,8 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "avro"
 version = "0.2.1"
-source = "git+https://github.com/jminer/rust-avro#473b142a644cff5972fb3e97016fe97c217f8ec8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48c6c5e5daa93193d91bdaedef8ed84c40cf369333a2b37f547488f701ce5d74"
 dependencies = [
  "regex 0.1.80",
  "serde_json 0.6.1",
@@ -490,7 +491,7 @@ checksum = "a4a45a46ab1f2412e53d3a0ade76ffad2025804294569aae387231a0cd6e0899"
 [[package]]
 name = "bundlr-sdk"
 version = "0.1.0"
-source = "git+https://github.com/Bundlr-Network/rust-sdk.git?branch=feature/bundler-validation#dc7ac3a91278d1663676ad7cd7d89335e1b05f4a"
+source = "git+https://github.com/Bundlr-Network/rust-sdk.git?branch=feature/bundler-validation#925a36318feb02d966d8f7dbe0309bcea1a665e6"
 dependencies = [
  "actix-files",
  "anyhow",
@@ -516,6 +517,7 @@ dependencies = [
  "serde 1.0.133",
  "serde_json 1.0.75",
  "sha2",
+ "thiserror",
  "tokio",
  "tokio-util",
 ]

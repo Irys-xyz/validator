@@ -109,6 +109,19 @@ pub struct Arweave {
     pub protocol: ArweaveProtocol,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+pub struct GqlVariables {
+    pub owners: Vec<String>,
+    pub limit: i64,
+    pub after: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct ReqBody {
+    pub query: String,
+    pub variables: GqlVariables,
+}
+
 impl Arweave {
     pub fn new(port: i32, host: String, protocol: String) -> Arweave {
         Arweave {
@@ -192,54 +205,32 @@ impl Arweave {
     pub async fn get_latest_transactions(
         &self,
         owner: &String,
-        first: Option<i32>,
+        limit: Option<i32>,
         after: Option<String>,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError> {
-        let raw_query = format!(
-            "
-      query {{
-        transactions(owners:[\"{}\"] first: {} {}) {{
-          pageInfo {{
-            hasNextPage
-          }}
-          edges {{
-            cursor
-            node {{
-              id
-              owner {{ address }}
-              signature
-              recipient
-              tags {{
-                name
-                value
-              }}
-              block {{
-                height
-                id
-                timestamp
-              }}
-              fee {{ winston }}
-              quantity {{ winston }}
-              data {{
-                size
-                type
-              }}
-            }}
-          }}
-        }}
-      }}",
+        let raw_query = format!("query($owners: [String!], $first: Int) {{ transactions(owners: $owners, first: $first) {{ pageInfo {{ hasNextPage }} edges {{ cursor node {{ id owner {{ address }} signature recipient tags {{ name value }} block {{ height id timestamp }} fee {{ winston }} quantity {{ winston }} data {{ size type }} }} }} }} }}");
+        let raw_variables = format!(
+            "{{\"owners\": [\"{}\"], \"limit\": {}, \"after\": {}}}",
             owner,
-            first.unwrap_or(100),
+            match limit {
+                None => format!(r"10"),
+                Some(a) => format!(r"{}", a),
+            },
             match after {
-                None => String::new(),
-                Some(a) => format!(r" after: {}", a),
+                None => format!(r"null"),
+                Some(a) => format!(r"{}", a),
             }
         );
 
         let url = format!("{}/graphql?query={}", self.get_host(), raw_query);
         let client = reqwest::Client::new();
+        let data = format!(
+            "{{\"query\":\"{}\",\"variables\":{}}}",
+            raw_query, raw_variables
+        );
 
-        let res = client.post(&url).send().await;
+        let body = serde_json::from_str::<ReqBody>(&data);
+        let res = client.post(&url).json(&body.unwrap()).send().await;
 
         if res.is_ok() {
             let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();

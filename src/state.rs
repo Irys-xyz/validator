@@ -34,5 +34,5 @@ impl PartialEq<ValidatorState> for u8 {
 pub type SharedValidatorState = Arc<AtomicU8>;
 
 pub fn generate_state() -> SharedValidatorState {
-    Arc::new(AtomicU8::from(&ValidatorState::Idle))
+    Arc::new(AtomicU8::from(&ValidatorState::Cosigner))
 }
