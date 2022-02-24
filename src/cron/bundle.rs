@@ -3,12 +3,13 @@ extern crate diesel;
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
-use crate::cron::arweave::arweave::Arweave;
+use crate::cron::arweave::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{NewBundle, NewTransaction};
 use crate::database::queries::*;
 use crate::types::Validator;
 use awc::Client;
 use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
+use bundlr_sdk::verify::types::Item;
 use bundlr_sdk::JWK;
 use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
@@ -57,97 +58,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 
     let txs_req = &txs_req.unwrap().0;
     for bundle_tx in txs_req {
-        // TODO: Check seeded [?]
-        // TODO: Download bundle [?]
-        let current_block = bundle_tx.block.as_ref().map(|b| b.height);
-
-        if current_block.is_none() {
-            info!(
-                "Bundle {} not included in any block, moving on ...",
-                &bundle_tx.id
-            );
-            continue;
-        } else {
-            info!(
-                "Bundle {} included in block {}",
-                &bundle_tx.id,
-                current_block.unwrap()
-            );
-            let is_bundle_present = get_bundle(&bundle_tx.id).is_ok();
-
-            if !is_bundle_present {
-                match insert_bundle_in_db(NewBundle {
-                    id: bundle_tx.id.clone(),
-                    owner_address: Some(bundler.address.clone()),
-                    block_height: current_block.unwrap(),
-                }) {
-                    Ok(()) => info!("Bundle {} successfully stored", &bundle_tx.id),
-                    Err(err) => error!("Error when storing bundle {} : {}", &bundle_tx.id, err),
-                }
-            }
-        }
-
-        let file_path = arweave.get_tx_data(&bundle_tx.id).await;
-        if file_path.is_ok() {
-            info!("Verifying file: {}", &file_path.as_ref().unwrap());
-            let path_str = file_path.unwrap().to_string();
-            let bundle_txs = match verify_file_bundle(path_str.clone()).await {
-                Err(r) => {
-                    error!("{}", r);
-                    Vec::new()
-                }
-                Ok(v) => v,
-            };
-
-            for bundle_tx in bundle_txs {
-                info!("Verifying bundle_tx: {}", &bundle_tx.tx_id);
-
-                let tx = get_tx(&bundle_tx.tx_id).await;
-                let mut tx_receipt: Option<TxReceipt> = None;
-                if tx.is_err() {
-                    let peer_tx = tx_exists_on_peers(&bundle_tx.tx_id).await;
-                    if peer_tx.is_ok() {
-                        tx_receipt = Some(peer_tx.unwrap());
-                    }
-                } else {
-                    let tx = tx.unwrap();
-                    tx_receipt = Some(TxReceipt {
-                        block: tx.block_promised,
-                        tx_id: tx.id,
-                        signature: match std::str::from_utf8(&tx.signature.to_vec()) {
-                            Ok(v) => v.to_string(),
-                            Err(e) => panic!("Invalid UTF-8 seq: {}", e),
-                        },
-                    });
-                }
-
-                info!("Tx receipt: {:?}", &tx_receipt);
-                /*
-                let tx_is_ok = verify_tx_receipt(&tx_receipt);
-                if tx_is_ok.unwrap() {
-                    if tx_receipt.block <= current_block.unwrap() {
-                        insert_tx_in_db(&NewTransaction {
-                            id: tx_receipt.tx_id.clone(),
-                            epoch: 0, // TODO: implement epoch correctly
-                            block_promised: tx_receipt.block,
-                            block_actual: current_block,
-                            signature: tx_receipt.signature.as_bytes().to_vec(),
-                            validated: true,
-                            bundle_id: Some(bundle_tx.tx_id.clone()),
-                            sent_to_leader: false,
-                        });
-                    } else {
-                        // TODO: vote slash
-                    }
-                }
-                */
-            }
-
-            match std::fs::remove_file(path_str.clone()) {
-                Ok(_r) => info!("Successfully deleted {}", path_str),
-                Err(err) => error!("Error deleting file {} : {}", path_str, err),
-            }
-        }
+        validate_bundle(&arweave, &bundler, bundle_tx).await;
     }
 
     // If no - sad - OK
@@ -157,6 +68,140 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     // If valid - return
 
     // If not - vote to slash... once vote is confirmed then tell all peers to check
+
+    Ok(())
+}
+
+async fn validate_bundle(
+    arweave: &Arweave,
+    bundler: &Bundler,
+    bundle: &ArweaveTx,
+) -> Result<(), ValidatorCronError> {
+    let block_ok = check_bundle_block(bundler, bundle).await;
+    let mut current_block: Option<i64> = None;
+    if let Err(err) = block_ok {
+        return Err(err);
+    } else {
+        current_block = block_ok.unwrap();
+    }
+    if current_block.is_none() {
+        return Ok(());
+    }
+
+    let path = arweave.get_tx_data(&bundle.id).await;
+    let mut file_path: Option<String> = None;
+    if path.is_ok() {
+        file_path = Some(path.unwrap());
+    } else {
+        error!("File path error {:?}", path);
+        return Ok(());
+    }
+
+    info!("Verifying file: {}", &file_path.as_ref().unwrap());
+    let path_str = file_path.unwrap().to_string();
+    let bundle_txs = match verify_file_bundle(path_str.clone()).await {
+        Err(r) => {
+            error!("{}", r);
+            Vec::new()
+        }
+        Ok(v) => v,
+    };
+
+    for bundle_tx in bundle_txs {
+        let tx_receipt = verify_bundle_tx(bundle_tx, current_block).await;
+    }
+
+    match std::fs::remove_file(path_str.clone()) {
+        Ok(_r) => info!("Successfully deleted {}", path_str),
+        Err(err) => error!("Error deleting file {} : {}", path_str, err),
+    };
+
+    Ok(())
+}
+
+async fn check_bundle_block(
+    bundler: &Bundler,
+    bundle: &ArweaveTx,
+) -> Result<Option<i64>, ValidatorCronError> {
+    let current_block = bundle.block.as_ref().map(|b| b.height);
+
+    if current_block.is_none() {
+        info!(
+            "Bundle {} not included in any block, moving on ...",
+            &bundle.id
+        );
+        return Ok(None);
+    } else {
+        let current_block = current_block.unwrap();
+        info!("Bundle {} included in block {}", &bundle.id, current_block);
+        let is_bundle_present = get_bundle(&bundle.id).is_ok();
+
+        if !is_bundle_present {
+            return match insert_bundle_in_db(NewBundle {
+                id: bundle.id.clone(),
+                owner_address: Some(bundler.address.clone()),
+                block_height: current_block,
+            }) {
+                Ok(()) => {
+                    info!("Bundle {} successfully stored", &bundle.id);
+                    Ok(Some(current_block))
+                }
+                Err(err) => {
+                    error!("Error when storing bundle {} : {}", &bundle.id, err);
+                    Err(ValidatorCronError::BundleNotInsertedInDB)
+                }
+            };
+        }
+
+        Ok(Some(current_block))
+    }
+}
+
+async fn verify_bundle_tx(
+    bundle_tx: Item,
+    current_block: Option<i64>,
+) -> Result<(), ValidatorCronError> {
+    info!("Verifying bundle_tx: {}", &bundle_tx.tx_id);
+
+    let tx = get_tx(&bundle_tx.tx_id).await;
+    let mut tx_receipt: Option<TxReceipt> = None;
+    if tx.is_ok() {
+        let tx = tx.unwrap();
+        tx_receipt = Some(TxReceipt {
+            block: tx.block_promised,
+            tx_id: tx.id,
+            signature: match std::str::from_utf8(&tx.signature.to_vec()) {
+                Ok(v) => v.to_string(),
+                Err(e) => panic!("Invalid UTF-8 seq: {}", e),
+            },
+        });
+    } else {
+        let peer_tx = tx_exists_on_peers(&bundle_tx.tx_id).await;
+        if peer_tx.is_ok() {
+            tx_receipt = Some(peer_tx.unwrap());
+        }
+    }
+
+    match tx_receipt {
+        Some(receipt) => {
+            let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
+            if tx_is_ok && receipt.block <= current_block.unwrap() {
+                insert_tx_in_db(&NewTransaction {
+                    id: receipt.tx_id.clone(),
+                    epoch: 0, // TODO: implement epoch correctly
+                    block_promised: receipt.block,
+                    block_actual: current_block,
+                    signature: receipt.signature.as_bytes().to_vec(),
+                    validated: true,
+                    bundle_id: Some(bundle_tx.tx_id.clone()),
+                    sent_to_leader: false,
+                });
+            } else {
+                // TODO: vote slash
+            }
+        }
+        None => (),
+    }
 
     Ok(())
 }

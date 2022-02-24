@@ -1,12 +1,12 @@
 use derive_more::{Display, Error};
 use std::convert::From;
 
-#[derive(Debug, Display, Error, Clone)]
+#[derive(Debug, Display, Error, Clone, PartialEq)]
 pub enum ValidatorCronError {
     TxNotFound,
     AddressNotFound,
     TxsFromAddressNotFound,
-    NoBlockIncluded,
+    BundleNotInsertedInDB,
 }
 
 #[derive(Debug, Display, Error, Clone)]

@@ -231,21 +231,24 @@ impl Arweave {
 
         let body = serde_json::from_str::<ReqBody>(&data);
         let res = client.post(&url).json(&body.unwrap()).send().await;
+        let status = res.as_ref().unwrap().status().as_u16();
 
-        if res.is_ok() {
-            let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();
-            let mut txs: Vec<Transaction> = Vec::<Transaction>::new();
-            let mut end_cursor: Option<String> = None;
-            for tx in &res.data.transactions.edges {
-                txs.push(tx.node.clone());
-                end_cursor = Some(tx.cursor.clone());
+        match status {
+            200 => {
+                let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();
+                let mut txs: Vec<Transaction> = Vec::<Transaction>::new();
+                let mut end_cursor: Option<String> = None;
+                for tx in &res.data.transactions.edges {
+                    txs.push(tx.node.clone());
+                    end_cursor = Some(tx.cursor.clone());
+                }
+                let has_next_page = res.data.transactions.pageInfo.hasNextPage;
+
+                Ok((txs, has_next_page, end_cursor))
             }
-            let has_next_page = res.data.transactions.pageInfo.hasNextPage;
-
-            return Ok((txs, has_next_page, end_cursor));
+            404 => Err(ArweaveError::TxsNotFound),
+            _ => Err(ArweaveError::UnknownErr),
         }
-
-        Err(ArweaveError::TxsNotFound)
     }
 
     fn get_host(&self) -> String {
