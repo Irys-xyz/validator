@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4.0.0-beta.15"
+clap = { version = "3.1.2", features = ["derive", "env"] }
 redis = { version = "0.21.4", features = ["tokio-comp"] }
 serde = "1.0.132"
 serde_json = "1.0.73"
