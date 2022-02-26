@@ -5,6 +5,7 @@ use std::convert::From;
 pub enum ArweaveError {
     TxsNotFound,
     TagNotFound,
+    MalformedQuery,
     UnknownErr,
 }
 

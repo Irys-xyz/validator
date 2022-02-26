@@ -7,6 +7,7 @@ pub enum ValidatorCronError {
     AddressNotFound,
     TxsFromAddressNotFound,
     BundleNotInsertedInDB,
+    TxInvalid,
 }
 
 #[derive(Debug, Display, Error, Clone)]

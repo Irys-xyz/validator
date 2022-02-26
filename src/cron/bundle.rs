@@ -58,7 +58,16 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 
     let txs_req = &txs_req.unwrap().0;
     for bundle_tx in txs_req {
-        validate_bundle(&arweave, &bundler, bundle_tx).await;
+        let res = validate_bundle(&arweave, &bundler, bundle_tx).await;
+        if let Err(err) = res {
+            match err {
+                ValidatorCronError::TxNotFound => todo!(),
+                ValidatorCronError::AddressNotFound => todo!(),
+                ValidatorCronError::TxsFromAddressNotFound => todo!(),
+                ValidatorCronError::BundleNotInsertedInDB => todo!(),
+                ValidatorCronError::TxInvalid => todo!(),
+            }
+        }
     }
 
     // If no - sad - OK
@@ -97,18 +106,26 @@ async fn validate_bundle(
         return Ok(());
     }
 
-    info!("Verifying file: {}", &file_path.as_ref().unwrap());
     let path_str = file_path.unwrap().to_string();
     let bundle_txs = match verify_file_bundle(path_str.clone()).await {
         Err(r) => {
-            error!("{}", r);
+            error!("Error verifying bundle {}:", r);
             Vec::new()
         }
         Ok(v) => v,
     };
 
+    info!(
+        "{} transactions found in bundle {}",
+        &bundle_txs.len(),
+        &bundle.id
+    );
     for bundle_tx in bundle_txs {
-        let tx_receipt = verify_bundle_tx(bundle_tx, current_block).await;
+        let tx_receipt = verify_bundle_tx(&bundle_tx, current_block).await;
+        if let Err(err) = tx_receipt {
+            info!("Error found in transaction {} : {}", &bundle_tx.tx_id, err);
+            return Err(ValidatorCronError::TxInvalid);
+        }
     }
 
     match std::fs::remove_file(path_str.clone()) {
@@ -158,11 +175,9 @@ async fn check_bundle_block(
 }
 
 async fn verify_bundle_tx(
-    bundle_tx: Item,
+    bundle_tx: &Item,
     current_block: Option<i64>,
 ) -> Result<(), ValidatorCronError> {
-    info!("Verifying bundle_tx: {}", &bundle_tx.tx_id);
-
     let tx = get_tx(&bundle_tx.tx_id).await;
     let mut tx_receipt: Option<TxReceipt> = None;
     if tx.is_ok() {

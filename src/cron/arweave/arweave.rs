@@ -1,5 +1,6 @@
 use super::error::ArweaveError;
 use paris::error;
+use paris::info;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -112,7 +113,7 @@ pub struct Arweave {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GqlVariables {
     pub owners: Vec<String>,
-    pub limit: i64,
+    pub first: i64,
     pub after: Option<String>,
 }
 
@@ -146,6 +147,7 @@ impl Arweave {
     }
 
     pub async fn get_tx_data(&self, transaction_id: &str) -> reqwest::Result<String> {
+        info!("Downloading bundle {} content", &transaction_id);
         let raw_path = format!("./bundles/{}", transaction_id);
         let file_path = Path::new(&raw_path);
         let mut buffer = File::create(&file_path).unwrap();
@@ -205,14 +207,14 @@ impl Arweave {
     pub async fn get_latest_transactions(
         &self,
         owner: &String,
-        limit: Option<i32>,
+        first: Option<i32>,
         after: Option<String>,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError> {
         let raw_query = format!("query($owners: [String!], $first: Int) {{ transactions(owners: $owners, first: $first) {{ pageInfo {{ hasNextPage }} edges {{ cursor node {{ id owner {{ address }} signature recipient tags {{ name value }} block {{ height id timestamp }} fee {{ winston }} quantity {{ winston }} data {{ size type }} }} }} }} }}");
         let raw_variables = format!(
-            "{{\"owners\": [\"{}\"], \"limit\": {}, \"after\": {}}}",
+            "{{\"owners\": [\"{}\"], \"first\": {}, \"after\": {}}}",
             owner,
-            match limit {
+            match first {
                 None => format!(r"10"),
                 Some(a) => format!(r"{}", a),
             },
@@ -246,6 +248,7 @@ impl Arweave {
 
                 Ok((txs, has_next_page, end_cursor))
             }
+            400 => Err(ArweaveError::MalformedQuery),
             404 => Err(ArweaveError::TxsNotFound),
             _ => Err(ArweaveError::UnknownErr),
         }
