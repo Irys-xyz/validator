@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_sign() {
-        dotenv::dotenv();
+        let _res = dotenv::dotenv();
 
         let body = UnsignedBody {
             id: "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk".into(),
@@ -201,7 +201,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_verify() {
-        dotenv::dotenv();
+        let _res = dotenv::dotenv();
         dbg!(
             sign_body(
                 "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk",

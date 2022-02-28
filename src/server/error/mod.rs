@@ -9,6 +9,7 @@ use openssl::error::ErrorStack;
 use paris::log;
 use redis::RedisError;
 
+#[warn(dead_code)]
 #[derive(Debug, Display, Error)]
 pub enum ValidatorServerError {
     #[display(fmt = "internal error")]

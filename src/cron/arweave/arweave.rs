@@ -72,12 +72,14 @@ pub struct GraphqlNodes {
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
+#[allow(non_snake_case)]
 pub struct GraphqlEdges {
     pub edges: Vec<GraphqlNodes>,
     pub pageInfo: PageInfo,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
+#[allow(non_snake_case)]
 pub struct PageInfo {
     pub hasNextPage: bool,
 }
@@ -99,8 +101,8 @@ pub struct TransactionStatus {
 
 #[derive(Clone)]
 pub enum ArweaveProtocol {
-    HTTP,
-    HTTPS,
+    Http,
+    Https,
 }
 
 #[derive(Clone)]
@@ -123,14 +125,15 @@ pub struct ReqBody {
     pub variables: GqlVariables,
 }
 
+#[warn(dead_code)]
 impl Arweave {
     pub fn new(port: i32, host: String, protocol: String) -> Arweave {
         Arweave {
             port,
             host,
             protocol: match &protocol[..] {
-                "http" => ArweaveProtocol::HTTP,
-                "https" | _ => ArweaveProtocol::HTTPS,
+                "http" => ArweaveProtocol::Http,
+                "https" | _ => ArweaveProtocol::Https,
             },
         }
     }
@@ -163,7 +166,12 @@ impl Arweave {
                     error!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
                     return Err(r);
                 } else {
-                    buffer.write(&item.unwrap());
+                    match buffer.write(&item.unwrap()) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            error!("Error writing on file {:?}: {:?}", file_path.to_str(), err)
+                        }
+                    }
                 }
             }
 
@@ -173,6 +181,7 @@ impl Arweave {
         Err(response.error_for_status().err().unwrap())
     }
 
+    #[warn(dead_code)]
     pub async fn get_tx_block(&self, transaction_id: &str) -> reqwest::Result<BlockInfo> {
         let client = reqwest::Client::new();
         let request = client
@@ -191,6 +200,7 @@ impl Arweave {
         request.json::<BlockInfo>().await
     }
 
+    #[warn(dead_code)]
     pub async fn get_network_info(&self) -> NetworkInfo {
         let client = reqwest::Client::new();
         let info = client
@@ -206,21 +216,21 @@ impl Arweave {
 
     pub async fn get_latest_transactions(
         &self,
-        owner: &String,
+        owner: &str,
         first: Option<i32>,
         after: Option<String>,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError> {
-        let raw_query = format!("query($owners: [String!], $first: Int) {{ transactions(owners: $owners, first: $first) {{ pageInfo {{ hasNextPage }} edges {{ cursor node {{ id owner {{ address }} signature recipient tags {{ name value }} block {{ height id timestamp }} fee {{ winston }} quantity {{ winston }} data {{ size type }} }} }} }} }}");
+        let raw_query = "query($owners: [String!], $first: Int) { transactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } fee { winston } quantity { winston } data { size type } } } } }".to_string();
         let raw_variables = format!(
             "{{\"owners\": [\"{}\"], \"first\": {}, \"after\": {}}}",
             owner,
             match first {
-                None => format!(r"10"),
+                None => r"10".to_string(),
                 Some(a) => format!(r"{}", a),
             },
             match after {
-                None => format!(r"null"),
-                Some(a) => format!(r"{}", a),
+                None => r"null".to_string(),
+                Some(a) => a,
             }
         );
 
@@ -256,8 +266,8 @@ impl Arweave {
 
     fn get_host(&self) -> String {
         let protocol = match self.protocol {
-            ArweaveProtocol::HTTP => "http",
-            ArweaveProtocol::HTTPS => "https",
+            ArweaveProtocol::Http => "http",
+            ArweaveProtocol::Https => "https",
         };
 
         if self.port == 80 {

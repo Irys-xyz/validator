@@ -13,7 +13,7 @@ fn get_db_connection() -> PgConnection {
     PgConnection::establish(&db_url).unwrap_or_else(|_| panic!("Error connecting to {}", db_url))
 }
 
-pub fn get_bundle(b_id: &String) -> Result<Bundle, Error> {
+pub fn get_bundle(b_id: &str) -> Result<Bundle, Error> {
     let conn = get_db_connection();
     bundle.filter(bundle::id.eq(b_id)).first::<Bundle>(&conn)
 }
@@ -43,13 +43,13 @@ pub async fn update_tx(tx: &NewTransaction) -> std::io::Result<()> {
     diesel::update(transactions::table.find(&tx.id))
         .set(&*tx)
         .get_result::<Transaction>(&conn)
-        .expect(&format!("Unable to find transaction {}", &tx.id));
+        .unwrap_or_else(|_| panic!("Unable to find transaction {}", &tx.id));
 
     Ok(())
 }
 
 // TODO: implement the database verification correctly
-pub async fn get_tx(tx_id: &String) -> Result<Transaction, Error> {
+pub async fn get_tx(tx_id: &str) -> Result<Transaction, Error> {
     let conn = get_db_connection();
     transactions
         .filter(transactions::id.eq(tx_id))

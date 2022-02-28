@@ -87,26 +87,17 @@ async fn validate_bundle(
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError> {
     let block_ok = check_bundle_block(bundler, bundle).await;
-    let mut current_block: Option<i64> = None;
+    let current_block = block_ok.as_ref().unwrap();
     if let Err(err) = block_ok {
         return Err(err);
-    } else {
-        current_block = block_ok.unwrap();
     }
     if current_block.is_none() {
         return Ok(());
     }
 
     let path = arweave.get_tx_data(&bundle.id).await;
-    let mut file_path: Option<String> = None;
-    if path.is_ok() {
-        file_path = Some(path.unwrap());
-    } else {
-        error!("File path error {:?}", path);
-        return Ok(());
-    }
+    let path_str = path.unwrap();
 
-    let path_str = file_path.unwrap().to_string();
     let bundle_txs = match verify_file_bundle(path_str.clone()).await {
         Err(r) => {
             error!("Error verifying bundle {}:", r);
@@ -147,7 +138,7 @@ async fn check_bundle_block(
             "Bundle {} not included in any block, moving on ...",
             &bundle.id
         );
-        return Ok(None);
+        Ok(None)
     } else {
         let current_block = current_block.unwrap();
         info!("Bundle {} included in block {}", &bundle.id, current_block);
@@ -176,7 +167,7 @@ async fn check_bundle_block(
 
 async fn verify_bundle_tx(
     bundle_tx: &Item,
-    current_block: Option<i64>,
+    current_block: &Option<i64>,
 ) -> Result<(), ValidatorCronError> {
     let tx = get_tx(&bundle_tx.tx_id).await;
     let mut tx_receipt: Option<TxReceipt> = None;
@@ -197,25 +188,22 @@ async fn verify_bundle_tx(
         }
     }
 
-    match tx_receipt {
-        Some(receipt) => {
-            let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
-            if tx_is_ok && receipt.block <= current_block.unwrap() {
-                insert_tx_in_db(&NewTransaction {
-                    id: receipt.tx_id.clone(),
-                    epoch: 0, // TODO: implement epoch correctly
-                    block_promised: receipt.block,
-                    block_actual: current_block,
-                    signature: receipt.signature.as_bytes().to_vec(),
-                    validated: true,
-                    bundle_id: Some(bundle_tx.tx_id.clone()),
-                    sent_to_leader: false,
-                });
-            } else {
-                // TODO: vote slash
-            }
+    if let Some(receipt) = tx_receipt {
+        let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
+        if tx_is_ok && receipt.block <= current_block.unwrap() {
+            let _insert_res = insert_tx_in_db(&NewTransaction {
+                id: receipt.tx_id.clone(),
+                epoch: 0, // TODO: implement epoch correctly
+                block_promised: receipt.block,
+                block_actual: *current_block,
+                signature: receipt.signature.as_bytes().to_vec(),
+                validated: true,
+                bundle_id: Some(bundle_tx.tx_id.clone()),
+                sent_to_leader: false,
+            });
+        } else {
+            // TODO: vote slash
         }
-        None => (),
     }
 
     Ok(())

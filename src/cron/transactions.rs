@@ -17,12 +17,14 @@ pub struct GraphqlNodes {
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
+#[allow(non_snake_case)]
 pub struct GraphqlEdges {
     pub edges: Vec<GraphqlNodes>,
     pub pageInfo: PageInfo,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
+#[allow(non_snake_case)]
 pub struct PageInfo {
     pub hasNextPage: bool,
 }
@@ -54,17 +56,17 @@ pub async fn get_transactions(
     limit: Option<i64>,
     after: Option<String>,
 ) -> Result<(Vec<BundleTransaction>, bool, Option<String>), TxsError> {
-    let raw_query = format!("query($limit: Int, $after: String) {{ transaction(limit: $limit, after: $after) {{ pageInfo {{ hasNextPage }} edges {{ cursor node {{ data_item_id address current_block expected_block }} }} }} }}");
+    let raw_query = "query($limit: Int, $after: String) { transaction(limit: $limit, after: $after) { pageInfo { hasNextPage } edges { cursor node { data_item_id address current_block expected_block } } } }".to_string();
 
     let raw_variables = format!(
         "{{\"limit\": {}, \"after\": {}}}",
         match limit {
-            None => format!(r"10"),
+            None => r"10".to_string(),
             Some(a) => format!(r"{}", a),
         },
         match after {
-            None => format!(r"null"),
-            Some(a) => format!(r"{}", a),
+            None => r"null".to_string(),
+            Some(a) => a,
         }
     );
 

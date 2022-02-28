@@ -27,7 +27,7 @@ pub struct ReqBody {
     validator_signatures: Vec<ValidatorSignature>,
 }
 
-pub async fn send_txs_to_leader(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
+pub async fn send_txs_to_leader(_state: SharedValidatorState) -> Result<(), ValidatorCronError> {
     let _res = post_transactions().await;
     Ok(())
 }

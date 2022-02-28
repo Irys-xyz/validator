@@ -18,7 +18,7 @@ pub async fn validate(state: SharedValidatorState) -> Result<(), ValidatorCronEr
     Ok(())
 }
 
-pub async fn validate_transactions(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
+pub async fn validate_transactions(_state: SharedValidatorState) -> Result<(), ValidatorCronError> {
     let bundler = get_bundler().await?;
 
     super::bundle::validate_transactions(bundler).await?;

@@ -1,7 +1,7 @@
 mod error;
 mod routes;
 
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 
 use actix_web::{
     middleware::Logger,
@@ -33,9 +33,9 @@ where
 {
     env_logger::init();
 
-    dbg!("{:?}", config.bind_address());
     let redis_connection_string = config.redis_connection_url().to_string();
     let db_url = config.database_connection_url().to_string();
+    info!("Starting HTTP server...");
 
     HttpServer::new(move || {
         let conn_manager = ConnectionManager::<PgConnection>::new(db_url.clone());
@@ -62,9 +62,9 @@ where
             )
             .service(
                 web::scope("/leader")
-                    .route("/tx/{tx_id}", web::get().to(|| HttpResponse::Ok()))
-                    .route("/tx", web::post().to(|| HttpResponse::Ok()))
-                    .route("/sign", web::post().to(|| HttpResponse::Ok())),
+                    .route("/tx/{tx_id}", web::get().to(HttpResponse::Ok))
+                    .route("/tx", web::post().to(HttpResponse::Ok))
+                    .route("/sign", web::post().to(HttpResponse::Ok)),
             )
             .service(web::scope("/idle").route("/", web::get().to(index)))
     })

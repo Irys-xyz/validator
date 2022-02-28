@@ -174,6 +174,7 @@ async fn add_to_db(_body: &PostTxBody) -> Result<(), ValidatorServerError> {
     Ok(())
 }
 
+#[warn(dead_code)]
 fn public_to_address(n: &str) -> String {
     BASE64URL.encode(&sha256(&BASE64URL.decode(n.as_bytes()).unwrap())[..])
 }
