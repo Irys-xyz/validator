@@ -6,7 +6,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use actix_web::{
     middleware::Logger,
     web::{self, Data},
-    App, HttpServer,
+    App, HttpResponse, HttpServer,
 };
 use diesel::{
     r2d2::{ConnectionManager, Pool},
@@ -31,17 +31,11 @@ pub async fn run_server<Config>(config: &Config) -> std::io::Result<()>
 where
     Config: ServerConfig,
 {
-    info!("Starting up HTTP server...");
-
     env_logger::init();
-    info!("Starting up HTTP server...");
 
+    dbg!("{:?}", config.bind_address());
     let redis_connection_string = config.redis_connection_url().to_string();
-    info!("Starting up HTTP server...");
-
     let db_url = config.database_connection_url().to_string();
-
-    info!("Starting up HTTP server...");
 
     HttpServer::new(move || {
         let conn_manager = ConnectionManager::<PgConnection>::new(db_url.clone());
@@ -60,9 +54,19 @@ where
             .app_data(Data::new(postgres_pool))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
-            .route("/tx/{tx_id}", web::get().to(get_tx))
-            .route("/tx", web::post().to(post_tx))
-            .route("/sign", web::post().to(sign_route))
+            .service(
+                web::scope("/cosigner")
+                    .route("/tx/{tx_id}", web::get().to(get_tx))
+                    .route("/tx", web::post().to(post_tx))
+                    .route("/sign", web::post().to(sign_route)),
+            )
+            .service(
+                web::scope("/leader")
+                    .route("/tx/{tx_id}", web::get().to(|| HttpResponse::Ok()))
+                    .route("/tx", web::post().to(|| HttpResponse::Ok()))
+                    .route("/sign", web::post().to(|| HttpResponse::Ok())),
+            )
+            .service(web::scope("/idle").route("/", web::get().to(index)))
     })
     .shutdown_timeout(5)
     .bind(config.bind_address())?
