@@ -1,5 +1,9 @@
 use actix_rt::task::JoinError;
-use actix_web::{HttpResponse, http::{header, StatusCode}, error, HttpResponseBuilder};
+use actix_web::{
+    error,
+    http::{header, StatusCode},
+    HttpResponse, HttpResponseBuilder,
+};
 use derive_more::{Display, Error};
 use openssl::error::ErrorStack;
 use paris::log;
@@ -32,7 +36,6 @@ impl error::ResponseError for ValidatorServerError {
         }
     }
 }
-
 
 impl From<RedisError> for ValidatorServerError {
     fn from(e: RedisError) -> Self {

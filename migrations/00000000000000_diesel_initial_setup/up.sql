@@ -35,6 +35,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE TABLE IF NOT EXISTS bundle (
+    id CHAR(43),
+    owner_address CHAR(43),
+    block_height BIGINT NOT NULL,
+    PRIMARY KEY (id)
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
     id CHAR(43),
     epoch BIGINT NOT NULL,
@@ -42,6 +49,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     block_actual BIGINT,
     signature bytea NOT NULL,
     validated bool NOT NULL,
+    bundle_id CHAR(43) REFERENCES bundle(id),
+    sent_to_leader bool NOT NULL,
     PRIMARY KEY (id)
 );
 

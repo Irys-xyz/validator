@@ -1,16 +1,23 @@
-use actix_web::{HttpResponse, web::Data};
+use actix_web::{web::Data, HttpResponse};
 
-use crate::{server::error::ValidatorServerError, database::{schema::transactions::dsl::*, models::Transaction}, types::DbPool};
+use crate::{
+    database::{models::Transaction, schema::transactions::dsl::*},
+    server::error::ValidatorServerError,
+    types::DbPool,
+};
 use diesel::prelude::*;
 
-pub async fn get_tx(path: (String,), db: Data<DbPool>) -> actix_web::Result<HttpResponse, ValidatorServerError> {
+pub async fn get_tx(
+    path: (String,),
+    db: Data<DbPool>,
+) -> actix_web::Result<HttpResponse, ValidatorServerError> {
     let res = actix_rt::task::spawn_blocking(move || {
         let conn = db.get().unwrap();
         transactions
             .filter(id.eq(path.0))
             .first::<Transaction>(&conn)
     })
-        .await?;
+    .await?;
 
     if let Ok(r) = res {
         Ok(HttpResponse::Ok().json(r))

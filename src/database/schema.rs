@@ -1,4 +1,12 @@
 table! {
+    bundle (id) {
+        id -> Bpchar,
+        owner_address -> Nullable<Bpchar>,
+        block_height -> Int8,
+    }
+}
+
+table! {
     leaders (address) {
         address -> Bpchar,
     }
@@ -12,6 +20,8 @@ table! {
         block_actual -> Nullable<Int8>,
         signature -> Bytea,
         validated -> Bool,
+        bundle_id -> Nullable<Bpchar>,
+        sent_to_leader -> Bool,
     }
 }
 
@@ -23,9 +33,6 @@ table! {
 }
 
 joinable!(leaders -> validators (address));
+joinable!(transactions -> bundle (bundle_id));
 
-allow_tables_to_appear_in_same_query!(
-    leaders,
-    transactions,
-    validators,
-);
+allow_tables_to_appear_in_same_query!(bundle, leaders, transactions, validators,);

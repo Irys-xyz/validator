@@ -1,31 +1,45 @@
-mod routes;
 mod error;
+mod routes;
 
-use std::sync::{RwLock, Arc};
+use std::net::{SocketAddr, ToSocketAddrs};
 
-use actix_web::{HttpServer, App, web::{self, Data}, middleware::Logger};
-use diesel::{r2d2::ConnectionManager, PgConnection};
+use actix_web::{
+    middleware::Logger,
+    web::{self, Data},
+    App, HttpServer,
+};
+use diesel::{
+    r2d2::{ConnectionManager, Pool},
+    PgConnection,
+};
 use paris::info;
 use reool::RedisPool;
 use routes::get_tx::get_tx;
-use routes::post_tx::post_tx;
 use routes::index::index;
-use diesel::r2d2::Pool;
+use routes::post_tx::post_tx;
 use tokio::runtime::Handle;
 
 use crate::server::routes::sign::sign_route;
 
-pub async fn run_server() -> std::io::Result<()> {
+pub trait ServerConfig {
+    fn bind_address(&self) -> &SocketAddr;
+    fn database_connection_url(&self) -> &str;
+    fn redis_connection_url(&self) -> &str;
+}
+
+pub async fn run_server<Config>(config: &Config) -> std::io::Result<()>
+where
+    Config: ServerConfig,
+{
     info!("Starting up HTTP server...");
 
     env_logger::init();
     info!("Starting up HTTP server...");
 
-    let port = std::env::var("PORT").map(|s| s.parse::<u16>().unwrap()).unwrap_or(10000);
-    let redis_connection_string = std::env::var("REDIS_CONNECTION_URL").unwrap();
+    let redis_connection_string = config.redis_connection_url().to_string();
     info!("Starting up HTTP server...");
 
-    let db_url = std::env::var("DATABASE_URL").unwrap();
+    let db_url = config.database_connection_url().to_string();
 
     info!("Starting up HTTP server...");
 
@@ -39,10 +53,7 @@ pub async fn run_server() -> std::io::Result<()> {
             .finish_redis_rs()
             .unwrap();
 
-        let postgres_pool = Pool::builder()
-            .max_size(10)
-            .build(conn_manager)
-            .unwrap();
+        let postgres_pool = Pool::builder().max_size(10).build(conn_manager).unwrap();
 
         App::new()
             .app_data(Data::new(redis_pool))
@@ -54,7 +65,7 @@ pub async fn run_server() -> std::io::Result<()> {
             .route("/sign", web::post().to(sign_route))
     })
     .shutdown_timeout(5)
-    .bind(format!("127.0.0.1:{}", port))?
+    .bind(config.bind_address())?
     .run()
     .await
 }

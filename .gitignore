@@ -1,3 +1,6 @@
 /target
-/tx_data
+/.vscode
+.env
 wallet.json
+/bundles/*
+!/bundles/.gitkeep

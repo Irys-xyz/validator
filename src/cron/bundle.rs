@@ -1,100 +1,78 @@
+extern crate diesel;
+
+use super::error::ValidatorCronError;
+use super::slasher::vote_slash;
+use super::transactions::get_transactions;
+use crate::cron::arweave::arweave::{Arweave, Transaction as ArweaveTx};
+use crate::database::models::{NewBundle, NewTransaction};
+use crate::database::queries::*;
+use crate::types::Validator;
 use awc::Client;
-use bundlr_sdk::JWK;
-use bundlr_sdk::deep_hash_sync::{ deep_hash_sync, ONE_AS_BUFFER };
+use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
 use bundlr_sdk::verify::types::Item;
-use bundlr_sdk::{ verify::file::verify_file_bundle, deep_hash::DeepHashChunk };
+use bundlr_sdk::JWK;
+use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
+use jsonwebkey::JsonWebKey;
+use lazy_static::lazy_static;
 use openssl::hash::MessageDigest;
-use openssl::pkey::{Public, PKey};
+use openssl::pkey::{PKey, Public};
 use openssl::rsa::Padding;
 use openssl::sign;
-use paris::error;
+use paris::{error, info};
 use serde::{Deserialize, Serialize};
-use lazy_static::lazy_static;
-use jsonwebkey::JsonWebKey;
-use crate::types::Validator;
-use crate::cron::arweave::arweave::Arweave;
-use super::error::ValidatorCronError;
 
 #[derive(Default)]
 pub struct Bundler {
-    address: String,
-    url: String
+    pub address: String,
+    pub url: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
-    block: u64,
+    block: i64,
     tx_id: String,
-    signature: String
-}
-
-pub struct Tx {
-    id: String,
-    block_height: Option<u64>
+    signature: String,
 }
 
 pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
-    Ok(Bundler { 
-                address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
-                url: "url".to_string()
-            })
+    Ok(Bundler {
+        address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
+        url: "https://node1.bundlr.network/".to_string(),
+    })
 }
 
 pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError> {
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
-    let txs_req =
-      arweave
-      .get_latest_transactions(&bundler.address, Some(50), None)
-      .await;
+    let txs_req = arweave
+        .get_latest_transactions(&bundler.address, Some(50), None)
+        .await;
 
     if let Err(r) = txs_req {
-        error!("Error occurred while getting txs from bundler address: \n {}. \n Error: {}",
-                bundler.address,
-                r);
-    }   else if txs_req.is_ok() {
-        let txs_req = &txs_req.unwrap().0;
-        for transaction in txs_req {
-            // TODO: Check seeded [?]
-            // TODO: Download bundle [?]
-            let arweave_tx = Tx {
-                id: transaction.id.clone(),
-                block_height: match &transaction.block {
-                    Some(b) => Some(b.height),
-                    None => None
-                }
-            };
+        error!(
+            "Error occurred while getting txs from bundler address: \n {}. Error: {}",
+            bundler.address, r
+        );
+        return Err(ValidatorCronError::TxsFromAddressNotFound);
+    }
 
-            let file_path = arweave.get_tx_data(&arweave_tx.id).await;
-            if file_path.is_ok() {
-                println!("Verifying file: {}", &file_path.as_ref().unwrap());
-                let bundle_txs = match verify_file_bundle(file_path.unwrap()).await {
-                    Err(r) => {
-                        dbg!(r);
-                        Vec::new()
-                    },
-                    Ok(v) => v,
-                };
-                
-                for bundle_tx in bundle_txs {
-                    let tx_receipt = if let Ok(tx_receipt) = tx_exists_in_db(&bundle_tx).await {
-                        tx_receipt
-                    } else if let Ok(tx_receipt) = tx_exists_on_peers(&bundle_tx.tx_id).await {
-                        tx_receipt
-                    } else {
-                        continue;
-                    };
-    
-                    let tx_is_ok = verify_tx_receipt(&tx_receipt);
-                    println!("{:?}", tx_is_ok);
-                }
+    let txs_req = &txs_req.unwrap().0;
+    for bundle_tx in txs_req {
+        let res = validate_bundle(&arweave, &bundler, bundle_tx).await;
+        if let Err(err) = res {
+            match err {
+                ValidatorCronError::TxNotFound => todo!(),
+                ValidatorCronError::AddressNotFound => todo!(),
+                ValidatorCronError::TxsFromAddressNotFound => todo!(),
+                ValidatorCronError::BundleNotInsertedInDB => todo!(),
+                ValidatorCronError::TxInvalid => todo!(),
             }
         }
     }
 
-    // If no - sad
+    // If no - sad - OK
 
-    // If yes - check that block_seeded == block_expected
+    // If yes - check that block_seeded == block_expected -
 
     // If valid - return
 
@@ -103,16 +81,144 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     Ok(())
 }
 
-// TODO: implement the database verification correctly
-async fn tx_exists_in_db(bundle_tx: &Item) -> Result<TxReceipt, ValidatorCronError> {
-    Ok(TxReceipt { 
-        block: 10,
-        tx_id: bundle_tx.tx_id.clone(),
-        signature: match String::from_utf8(bundle_tx.signature.clone()) {
-            Ok(s) => s,
-            Err(_) => String::new(),
-        },
-    })
+async fn validate_bundle(
+    arweave: &Arweave,
+    bundler: &Bundler,
+    bundle: &ArweaveTx,
+) -> Result<(), ValidatorCronError> {
+    let block_ok = check_bundle_block(bundler, bundle).await;
+    let mut current_block: Option<i64> = None;
+    if let Err(err) = block_ok {
+        return Err(err);
+    } else {
+        current_block = block_ok.unwrap();
+    }
+    if current_block.is_none() {
+        return Ok(());
+    }
+
+    let path = arweave.get_tx_data(&bundle.id).await;
+    let mut file_path: Option<String> = None;
+    if path.is_ok() {
+        file_path = Some(path.unwrap());
+    } else {
+        error!("File path error {:?}", path);
+        return Ok(());
+    }
+
+    let path_str = file_path.unwrap().to_string();
+    let bundle_txs = match verify_file_bundle(path_str.clone()).await {
+        Err(r) => {
+            error!("Error verifying bundle {}:", r);
+            Vec::new()
+        }
+        Ok(v) => v,
+    };
+
+    info!(
+        "{} transactions found in bundle {}",
+        &bundle_txs.len(),
+        &bundle.id
+    );
+    for bundle_tx in bundle_txs {
+        let tx_receipt = verify_bundle_tx(&bundle_tx, current_block).await;
+        if let Err(err) = tx_receipt {
+            info!("Error found in transaction {} : {}", &bundle_tx.tx_id, err);
+            return Err(ValidatorCronError::TxInvalid);
+        }
+    }
+
+    match std::fs::remove_file(path_str.clone()) {
+        Ok(_r) => info!("Successfully deleted {}", path_str),
+        Err(err) => error!("Error deleting file {} : {}", path_str, err),
+    };
+
+    Ok(())
+}
+
+async fn check_bundle_block(
+    bundler: &Bundler,
+    bundle: &ArweaveTx,
+) -> Result<Option<i64>, ValidatorCronError> {
+    let current_block = bundle.block.as_ref().map(|b| b.height);
+
+    if current_block.is_none() {
+        info!(
+            "Bundle {} not included in any block, moving on ...",
+            &bundle.id
+        );
+        return Ok(None);
+    } else {
+        let current_block = current_block.unwrap();
+        info!("Bundle {} included in block {}", &bundle.id, current_block);
+        let is_bundle_present = get_bundle(&bundle.id).is_ok();
+
+        if !is_bundle_present {
+            return match insert_bundle_in_db(NewBundle {
+                id: bundle.id.clone(),
+                owner_address: Some(bundler.address.clone()),
+                block_height: current_block,
+            }) {
+                Ok(()) => {
+                    info!("Bundle {} successfully stored", &bundle.id);
+                    Ok(Some(current_block))
+                }
+                Err(err) => {
+                    error!("Error when storing bundle {} : {}", &bundle.id, err);
+                    Err(ValidatorCronError::BundleNotInsertedInDB)
+                }
+            };
+        }
+
+        Ok(Some(current_block))
+    }
+}
+
+async fn verify_bundle_tx(
+    bundle_tx: &Item,
+    current_block: Option<i64>,
+) -> Result<(), ValidatorCronError> {
+    let tx = get_tx(&bundle_tx.tx_id).await;
+    let mut tx_receipt: Option<TxReceipt> = None;
+    if tx.is_ok() {
+        let tx = tx.unwrap();
+        tx_receipt = Some(TxReceipt {
+            block: tx.block_promised,
+            tx_id: tx.id,
+            signature: match std::str::from_utf8(&tx.signature.to_vec()) {
+                Ok(v) => v.to_string(),
+                Err(e) => panic!("Invalid UTF-8 seq: {}", e),
+            },
+        });
+    } else {
+        let peer_tx = tx_exists_on_peers(&bundle_tx.tx_id).await;
+        if peer_tx.is_ok() {
+            tx_receipt = Some(peer_tx.unwrap());
+        }
+    }
+
+    match tx_receipt {
+        Some(receipt) => {
+            let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
+            if tx_is_ok && receipt.block <= current_block.unwrap() {
+                insert_tx_in_db(&NewTransaction {
+                    id: receipt.tx_id.clone(),
+                    epoch: 0, // TODO: implement epoch correctly
+                    block_promised: receipt.block,
+                    block_actual: current_block,
+                    signature: receipt.signature.as_bytes().to_vec(),
+                    validated: true,
+                    bundle_id: Some(bundle_tx.tx_id.clone()),
+                    sent_to_leader: false,
+                });
+            } else {
+                // TODO: vote slash
+            }
+        }
+        None => (),
+    }
+
+    Ok(())
 }
 
 async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError> {
@@ -123,32 +229,26 @@ async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError
             .get(format!("{}/tx/{}", peer.url, tx_id))
             .send()
             .await;
-        
-            if let Err(r) = response {
-                error!("Error occurred while getting tx from peer - {}", r);
-                continue;
-            }
+
+        if let Err(r) = response {
+            error!("Error occurred while getting tx from peer - {}", r);
+            continue;
+        }
 
         let mut response = response.unwrap();
 
         if response.status().is_success() {
-            return Ok(response
-                            .json()
-                            .await
-                            .unwrap())
+            return Ok(response.json().await.unwrap());
         }
     }
 
     Err(ValidatorCronError::TxNotFound)
 }
 
-
 fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     pub const BUNDLR_AS_BUFFER: &[u8] = "Bundlr".as_bytes();
 
-    let block = tx_receipt.block.to_string()
-        .as_bytes()
-        .to_vec();
+    let block = tx_receipt.block.to_string().as_bytes().to_vec();
 
     let tx_id = tx_receipt.tx_id.as_bytes().to_vec();
 
@@ -156,28 +256,50 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
         DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
         DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
         DeepHashChunk::Chunk(tx_id.into()),
-        DeepHashChunk::Chunk(block.into())
-    ])).unwrap();
+        DeepHashChunk::Chunk(block.into()),
+    ]))
+    .unwrap();
 
     lazy_static! {
         static ref PUBLIC: PKey<Public> = {
             let jwk = JWK {
                 kty: "RSA",
                 e: "AQAB",
-                n: std::env::var("BUNDLER_PUBLIC").unwrap()
+                n: std::env::var("BUNDLER_PUBLIC").unwrap(),
             };
 
             let p = serde_json::to_string(&jwk).unwrap();
             let key: JsonWebKey = p.parse().unwrap();
-            
+
             PKey::public_key_from_der(key.key.to_der().as_slice()).unwrap()
         };
     };
 
-    let sig = BASE64URL_NOPAD.decode(tx_receipt.signature.as_bytes()).unwrap();
+    let sig = BASE64URL_NOPAD
+        .decode(tx_receipt.signature.as_bytes())
+        .unwrap();
 
     let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &PUBLIC).unwrap();
     verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
     verifier.update(&message).unwrap();
     Ok(verifier.verify(&sig).unwrap_or(false))
+}
+
+pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCronError> {
+    let res = get_transactions(&bundler, Some(100), None).await;
+    let txs = match res {
+        Ok(r) => r.0,
+        Err(_) => Vec::new(),
+    };
+
+    for tx in txs {
+        // TODO: validate transacitons
+        let block_ok = tx.current_block < tx.expected_block;
+
+        if block_ok {
+            let _res = vote_slash(&bundler);
+        }
+    }
+
+    Ok(())
 }
