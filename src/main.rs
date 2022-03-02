@@ -19,9 +19,12 @@ use openssl::{
     pkey::{PKey, Private, Public},
     sha::Sha256,
 };
+use paris::info;
 use server::{run_server, RuntimeContext};
-use state::generate_state;
+use state::{generate_state, SharedValidatorState};
 use std::{fs, net::SocketAddr};
+
+use crate::database::queries::RequestContext;
 
 #[derive(Clone, Debug, Parser)]
 struct AppConfig {
@@ -78,6 +81,7 @@ struct AppContext {
     database_url: String,
     redis_connection_url: String,
     listen: SocketAddr,
+    validator_state: SharedValidatorState,
 }
 
 impl AppContext {
@@ -134,6 +138,8 @@ impl AppContext {
             (priv_key, pub_key, address)
         };
 
+        let state = generate_state();
+
         Self {
             bundler_key: bundler_public,
             validator_private_key: validator_private,
@@ -143,6 +149,7 @@ impl AppContext {
             database_url: config.database_url.clone(),
             redis_connection_url: config.redis_connection_url.clone(),
             listen: config.listen,
+            validator_state: state,
         }
     }
 }
@@ -152,6 +159,10 @@ impl queries::RequestContext for AppContext {
     fn get_db_connection(&self) -> PgConnection {
         PgConnection::establish(&self.database_url)
             .unwrap_or_else(|_| panic!("Error connecting to {}", self.database_url))
+    }
+
+    fn get_validator_state(&self) -> &state::SharedValidatorState {
+        &self.validator_state
     }
 }
 
@@ -196,13 +207,13 @@ async fn main() -> () {
     dotenv::dotenv().ok();
 
     let config = AppConfig::parse();
-    let state = generate_state();
+    info!("here");
 
     let ctx = AppContext::new(&config);
 
     if !config.no_cron {
         paris::info!("Running with cron");
-        tokio::task::spawn_local(run_crons(ctx.clone(), state));
+        tokio::task::spawn_local(run_crons(ctx.clone()));
     };
 
     if !config.no_server {

@@ -6,9 +6,11 @@ use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
+use crate::state::SharedValidatorState;
 
 pub trait RequestContext {
     fn get_db_connection(&self) -> PgConnection;
+    fn get_validator_state(&self) -> &SharedValidatorState;
 }
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>

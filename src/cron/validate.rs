@@ -6,16 +6,13 @@ use std::sync::Arc;
 use super::bundle::{get_bundler, validate_bundler};
 use super::error::ValidatorCronError;
 
-pub async fn validate<Context>(
-    ctx: Arc<Context>,
-    state: SharedValidatorState,
-) -> Result<(), ValidatorCronError>
+pub async fn validate<Context>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
 where
     Context: queries::RequestContext,
 {
     let bundler = get_bundler().await?;
 
-    let s = state.load(Ordering::SeqCst);
+    let s = ctx.get_validator_state().load(Ordering::SeqCst);
     match s {
         s if s == ValidatorState::Cosigner => validate_bundler(&*ctx, bundler).await?,
         s if s == ValidatorState::Idle => (),
@@ -26,10 +23,7 @@ where
     Ok(())
 }
 
-pub async fn validate_transactions<Context>(
-    _: Arc<Context>,
-    state: SharedValidatorState,
-) -> Result<(), ValidatorCronError> {
+pub async fn validate_transactions<Context>(_: Arc<Context>) -> Result<(), ValidatorCronError> {
     let bundler = get_bundler().await?;
 
     super::bundle::validate_transactions(bundler).await?;
