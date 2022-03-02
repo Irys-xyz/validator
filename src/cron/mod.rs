@@ -7,26 +7,31 @@ mod slasher;
 mod transactions;
 mod validate;
 
-use crate::state::SharedValidatorState;
+use crate::{database::queries, state::SharedValidatorState};
 use futures::{join, Future};
 use paris::{error, info};
-use std::time::Duration;
+use std::{pin::Pin, sync::Arc, time::Duration};
 
 use self::error::ValidatorCronError;
 
 // Update contract state
-pub async fn run_crons(state: SharedValidatorState) {
+pub async fn run_crons<Context>(ctx: Context, state: SharedValidatorState)
+where
+    Context: queries::RequestContext + Clone,
+{
     info!("Validator starting ...");
     join!(
         //create_cron("update contract", contract::update_contract, 30),
-        create_cron("validate bundler", validate::validate, 2 * 60, &state),
+        create_cron(&ctx, "validate bundler", validate::validate, 2 * 60, &state),
         create_cron(
+            &ctx,
             "validate transactions",
             validate::validate_transactions,
             30,
             &state
         ),
         create_cron(
+            &ctx,
             "send transactions to leader",
             leader::send_txs_to_leader,
             60,
@@ -35,18 +40,20 @@ pub async fn run_crons(state: SharedValidatorState) {
     );
 }
 
-async fn create_cron<F>(
-    description: &'static str,
-    f: impl Fn(SharedValidatorState) -> F,
+async fn create_cron<'a, Context, F>(
+    ctx: &Context,
+    description: &'a str,
+    f: impl Fn(Arc<Context>, SharedValidatorState) -> F,
     sleep: u64,
     shared_state: &SharedValidatorState,
 ) where
-    F: Future<Output = Result<(), ValidatorCronError>>,
-    F::Output: 'static,
+    Context: Clone + 'a,
+    F: Future<Output = Result<(), ValidatorCronError>> + 'a,
 {
+    let ctx = Arc::new(ctx.clone());
     loop {
         info!("Task running - {}", description);
-        match f(shared_state.clone()).await {
+        match f(ctx.clone(), shared_state.clone()).await {
             Ok(_) => info!("Task finished - {}", description),
             Err(e) => error!("Task error - {} with {}", description, e),
         };
