@@ -1,15 +1,23 @@
+use crate::database::queries;
 use crate::state::{SharedValidatorState, ValidatorState};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use super::bundle::{get_bundler, validate_bundler};
 use super::error::ValidatorCronError;
 
-pub async fn validate(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
+pub async fn validate<Context>(
+    ctx: Arc<Context>,
+    state: SharedValidatorState,
+) -> Result<(), ValidatorCronError>
+where
+    Context: queries::RequestContext,
+{
     let bundler = get_bundler().await?;
 
     let s = state.load(Ordering::SeqCst);
     match s {
-        s if s == ValidatorState::Cosigner => validate_bundler(bundler).await?,
+        s if s == ValidatorState::Cosigner => validate_bundler(&*ctx, bundler).await?,
         s if s == ValidatorState::Idle => (),
         s if s == ValidatorState::Leader => (),
         _ => panic!("Unknown validator state: {:?}", s),
@@ -18,7 +26,10 @@ pub async fn validate(state: SharedValidatorState) -> Result<(), ValidatorCronEr
     Ok(())
 }
 
-pub async fn validate_transactions(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
+pub async fn validate_transactions<Context>(
+    _: Arc<Context>,
+    state: SharedValidatorState,
+) -> Result<(), ValidatorCronError> {
     let bundler = get_bundler().await?;
 
     super::bundle::validate_transactions(bundler).await?;

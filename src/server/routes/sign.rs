@@ -5,13 +5,10 @@ use actix_web::{
 use bundlr_sdk::{
     deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER},
     deep_hash_sync::deep_hash_sync,
-    JWK,
 };
 
 use data_encoding::BASE64URL_NOPAD;
 use diesel::RunQueryDsl;
-use jsonwebkey::JsonWebKey;
-use lazy_static::lazy_static;
 use openssl::{
     hash::MessageDigest,
     pkey::{PKey, Private, Public},
@@ -24,13 +21,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_ADDRESS, VALIDATOR_AS_BUFFER},
-    database::{
-        models::{NewTransaction, Transaction},
-        schema::transactions::dsl::*,
-    },
+    database::{models::NewTransaction, schema::transactions::dsl::*},
     server::error::ValidatorServerError,
     types::DbPool,
 };
+
+pub trait Config {
+    fn bundler_address(&self) -> &str;
+    fn bundler_public_key(&self) -> &PKey<Public>;
+    fn validator_address(&self) -> &str;
+    fn validator_private_key(&self) -> &PKey<Private>;
+    fn validator_public_key(&self) -> &PKey<Public>;
+}
 
 #[derive(Deserialize)]
 pub struct UnsignedBody {
@@ -50,35 +52,15 @@ struct SignedBody {
     validator_signature: String,
 }
 
-lazy_static! {
-    static ref BUNDLER_ADDRESS: String =
-        BASE64URL_NOPAD.encode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes());
-    static ref BUNDLER_PUBLIC: PKey<Public> = {
-        let jwk = JWK {
-            kty: "RSA",
-            e: "AQAB",
-            n: std::env::var("BUNDLER_PUBLIC").unwrap(),
-        };
-
-        let p = serde_json::to_string(&jwk).unwrap();
-        let key: JsonWebKey = p.parse().unwrap();
-
-        PKey::public_key_from_der(key.key.to_der().as_slice()).unwrap()
-    };
-    static ref VALIDATOR_PRIVATE_KEY: PKey<Private> = {
-        let file: String =
-            String::from_utf8(include_bytes!("../../../wallet.json").to_vec()).unwrap();
-        let key: JsonWebKey = file.parse().unwrap();
-        let pem = key.key.to_pem();
-        PKey::private_key_from_pem(pem.as_bytes()).unwrap()
-    };
-}
-
-pub async fn sign_route(
+pub async fn sign_route<Config>(
+    config: Data<Config>,
     db: Data<DbPool>,
     redis: Data<RedisPool>,
     body: Json<UnsignedBody>,
-) -> actix_web::Result<HttpResponse, ValidatorServerError> {
+) -> actix_web::Result<HttpResponse, ValidatorServerError>
+where
+    Config: self::Config,
+{
     let body = body.into_inner();
 
     let mut conn = redis.check_out(PoolDefault).await.unwrap();
@@ -89,7 +71,10 @@ pub async fn sign_route(
     };
     let current_block = conn.get::<_, u128>(&body.id).await.unwrap();
 
-    if !body.validators.contains(&BUNDLER_ADDRESS) {
+    if !body
+        .validators
+        .contains(&config.validator_address().to_string())
+    {
         return Ok(HttpResponse::BadRequest().finish());
     }
 
@@ -97,12 +82,17 @@ pub async fn sign_route(
         return Ok(HttpResponse::BadRequest().finish());
     }
 
-    if !verify_body(&BUNDLER_PUBLIC, &body) {
+    if !verify_body(&config.bundler_public_key(), &body) {
         return Ok(HttpResponse::BadRequest().finish());
     };
 
     // Sign
-    let sig = sign_body(&VALIDATOR_PRIVATE_KEY, &VALIDATOR_ADDRESS, body.id.as_str()).await;
+    let sig = sign_body(
+        &config.validator_private_key(),
+        &config.bundler_address(),
+        body.id.as_str(),
+    )
+    .await;
 
     // Add to db
     let current_epoch = conn.get::<_, i64>("validator:epoch:current").await.unwrap();
