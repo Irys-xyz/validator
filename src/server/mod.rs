@@ -1,5 +1,5 @@
 mod error;
-mod routes;
+pub(crate) mod routes;
 
 use std::net::{SocketAddr, ToSocketAddrs};
 
@@ -21,28 +21,29 @@ use tokio::runtime::Handle;
 
 use crate::server::routes::sign::sign_route;
 
-pub trait ServerConfig {
+pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
     fn database_connection_url(&self) -> &str;
     fn redis_connection_url(&self) -> &str;
 }
 
-pub async fn run_server<Config>(config: &Config) -> std::io::Result<()>
+pub async fn run_server<Context>(ctx: Context) -> std::io::Result<()>
 where
-    Config: ServerConfig,
+    Context: RuntimeContext + routes::sign::Config + Clone + Send + 'static,
 {
     info!("Starting up HTTP server...");
 
     env_logger::init();
     info!("Starting up HTTP server...");
 
-    let redis_connection_string = config.redis_connection_url().to_string();
+    let redis_connection_string = ctx.redis_connection_url().to_string();
     info!("Starting up HTTP server...");
 
-    let db_url = config.database_connection_url().to_string();
+    let db_url = ctx.database_connection_url().to_string();
 
     info!("Starting up HTTP server...");
 
+    let server_config = ctx.clone();
     HttpServer::new(move || {
         let conn_manager = ConnectionManager::<PgConnection>::new(db_url.clone());
 
@@ -56,16 +57,17 @@ where
         let postgres_pool = Pool::builder().max_size(10).build(conn_manager).unwrap();
 
         App::new()
+            .app_data(Data::new(server_config.clone()))
             .app_data(Data::new(redis_pool))
             .app_data(Data::new(postgres_pool))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
             .route("/tx/{tx_id}", web::get().to(get_tx))
             .route("/tx", web::post().to(post_tx))
-            .route("/sign", web::post().to(sign_route))
+            .route("/sign", web::post().to(sign_route::<Context>))
     })
     .shutdown_timeout(5)
-    .bind(config.bind_address())?
+    .bind(ctx.bind_address())?
     .run()
     .await
 }

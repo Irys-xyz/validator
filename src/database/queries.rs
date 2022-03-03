@@ -1,25 +1,29 @@
 use diesel::prelude::*;
 use diesel::result::Error;
-use diesel::{Connection, PgConnection, QueryDsl};
+use diesel::{PgConnection, QueryDsl};
 extern crate diesel;
 use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
 
-fn get_db_connection() -> PgConnection {
-    let db_url = std::env::var("DATABASE_URL").unwrap();
-
-    PgConnection::establish(&db_url).unwrap_or_else(|_| panic!("Error connecting to {}", db_url))
+pub trait RequestContext {
+    fn get_db_connection(&self) -> PgConnection;
 }
 
-pub fn get_bundle(b_id: &String) -> Result<Bundle, Error> {
-    let conn = get_db_connection();
+pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
+where
+    Context: RequestContext,
+{
+    let conn = ctx.get_db_connection();
     bundle.filter(bundle::id.eq(b_id)).first::<Bundle>(&conn)
 }
 
-pub fn insert_bundle_in_db(new_bundle: NewBundle) -> std::io::Result<()> {
-    let conn = get_db_connection();
+pub fn insert_bundle_in_db<Context>(ctx: &Context, new_bundle: NewBundle) -> std::io::Result<()>
+where
+    Context: RequestContext,
+{
+    let conn = ctx.get_db_connection();
     diesel::insert_into(bundle::table)
         .values(&new_bundle)
         .execute(&conn)
@@ -28,8 +32,11 @@ pub fn insert_bundle_in_db(new_bundle: NewBundle) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn insert_tx_in_db(new_tx: &NewTransaction) -> std::io::Result<()> {
-    let conn = get_db_connection();
+pub fn insert_tx_in_db<Context>(ctx: &Context, new_tx: &NewTransaction) -> std::io::Result<()>
+where
+    Context: RequestContext,
+{
+    let conn = ctx.get_db_connection();
     diesel::insert_into(transactions::table)
         .values(new_tx)
         .execute(&conn)
@@ -38,8 +45,11 @@ pub fn insert_tx_in_db(new_tx: &NewTransaction) -> std::io::Result<()> {
     Ok(())
 }
 
-pub async fn update_tx(tx: &NewTransaction) -> std::io::Result<()> {
-    let conn = get_db_connection();
+pub async fn update_tx<Context>(ctx: &Context, tx: &NewTransaction) -> std::io::Result<()>
+where
+    Context: RequestContext,
+{
+    let conn = ctx.get_db_connection();
     diesel::update(transactions::table.find(&tx.id))
         .set(&*tx)
         .get_result::<Transaction>(&conn)
@@ -49,15 +59,21 @@ pub async fn update_tx(tx: &NewTransaction) -> std::io::Result<()> {
 }
 
 // TODO: implement the database verification correctly
-pub async fn get_tx(tx_id: &String) -> Result<Transaction, Error> {
-    let conn = get_db_connection();
+pub async fn get_tx<Context>(ctx: &Context, tx_id: &String) -> Result<Transaction, Error>
+where
+    Context: RequestContext,
+{
+    let conn = ctx.get_db_connection();
     transactions
         .filter(transactions::id.eq(tx_id))
         .first::<Transaction>(&conn)
 }
 
-pub async fn get_unposted_txs() -> Result<Vec<Transaction>, Error> {
-    let conn = get_db_connection();
+pub async fn get_unposted_txs<Context>(ctx: &Context) -> Result<Vec<Transaction>, Error>
+where
+    Context: RequestContext,
+{
+    let conn = ctx.get_db_connection();
     transactions
         .filter(transactions::sent_to_leader.eq(false))
         .limit(25)

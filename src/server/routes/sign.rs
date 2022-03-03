@@ -5,13 +5,10 @@ use actix_web::{
 use bundlr_sdk::{
     deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER},
     deep_hash_sync::deep_hash_sync,
-    JWK,
 };
 
 use data_encoding::BASE64URL_NOPAD;
 use diesel::RunQueryDsl;
-use jsonwebkey::JsonWebKey;
-use lazy_static::lazy_static;
 use openssl::{
     hash::MessageDigest,
     pkey::{PKey, Private, Public},
@@ -28,6 +25,14 @@ use crate::{
     server::error::ValidatorServerError,
     types::DbPool,
 };
+
+pub trait Config {
+    fn bundler_address(&self) -> &str;
+    fn bundler_public_key(&self) -> &PKey<Public>;
+    fn validator_address(&self) -> &str;
+    fn validator_private_key(&self) -> &PKey<Private>;
+    fn validator_public_key(&self) -> &PKey<Public>;
+}
 
 #[derive(Deserialize)]
 pub struct UnsignedBody {
@@ -47,20 +52,15 @@ struct SignedBody {
     validator_signature: String,
 }
 
-lazy_static! {
-    static ref BUNDLER_PUBLIC: Vec<u8> = {
-        let var = BASE64URL_NOPAD.decode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes());
-        var.unwrap()
-    };
-    static ref BUNDLER_ADDRESS: String =
-        BASE64URL_NOPAD.encode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes());
-}
-
-pub async fn sign_route(
+pub async fn sign_route<Config>(
+    config: Data<Config>,
     db: Data<DbPool>,
     redis: Data<RedisPool>,
     body: Json<UnsignedBody>,
-) -> actix_web::Result<HttpResponse, ValidatorServerError> {
+) -> actix_web::Result<HttpResponse, ValidatorServerError>
+where
+    Config: self::Config,
+{
     let body = body.into_inner();
 
     let mut conn = redis.check_out(PoolDefault).await.unwrap();
@@ -71,7 +71,10 @@ pub async fn sign_route(
     };
     let current_block = conn.get::<_, u128>(&body.id).await.unwrap();
 
-    if !body.validators.contains(&VALIDATOR_ADDRESS) {
+    if !body
+        .validators
+        .contains(&config.validator_address().to_string())
+    {
         return Ok(HttpResponse::BadRequest().finish());
     }
 
@@ -79,12 +82,17 @@ pub async fn sign_route(
         return Ok(HttpResponse::BadRequest().finish());
     }
 
-    if !verify_body(&body) {
+    if !verify_body(&config.bundler_public_key(), &body) {
         return Ok(HttpResponse::BadRequest().finish());
     };
 
     // Sign
-    let sig = sign_body(body.id.as_str(), BUNDLER_ADDRESS.as_str()).await;
+    let sig = sign_body(
+        &config.validator_private_key(),
+        &config.bundler_address(),
+        body.id.as_str(),
+    )
+    .await;
 
     // Add to db
     let current_epoch = conn.get::<_, i64>("validator:epoch:current").await.unwrap();
@@ -113,9 +121,8 @@ pub async fn sign_route(
         .body(sig))
 }
 
-fn verify_body(body: &UnsignedBody) -> bool {
+fn verify_body(bundler_key: &PKey<Public>, body: &UnsignedBody) -> bool {
     let block = body.block.to_string().as_bytes().to_vec();
-
     let tx_id = body.id.as_bytes().to_vec();
 
     let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
@@ -126,30 +133,16 @@ fn verify_body(body: &UnsignedBody) -> bool {
     ]))
     .unwrap();
 
-    lazy_static! {
-        static ref PUBLIC: PKey<Public> = {
-            let jwk = JWK {
-                kty: "RSA",
-                e: "AQAB",
-                n: std::env::var("BUNDLER_PUBLIC").unwrap(),
-            };
-
-            let p = serde_json::to_string(&jwk).unwrap();
-            let key: JsonWebKey = p.parse().unwrap();
-
-            PKey::public_key_from_der(key.key.to_der().as_slice()).unwrap()
-        };
-    };
-
     let sig = BASE64URL_NOPAD.decode(body.signature.as_bytes()).unwrap();
 
-    let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &PUBLIC).unwrap();
+    let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &bundler_key).unwrap();
     verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
     verifier.update(&message).unwrap();
+    // TODO: we shouldn't probably hide errors here, at least we should log them
     verifier.verify(&sig).unwrap_or(false)
 }
 
-async fn sign_body(tx_id: &str, bundler_address: &str) -> Vec<u8> {
+async fn sign_body(validator_key: &PKey<Private>, bundler_address: &str, tx_id: &str) -> Vec<u8> {
     let tx_id = tx_id.as_bytes().to_vec();
 
     let message = deep_hash(DeepHashChunk::Chunks(vec![
@@ -161,53 +154,249 @@ async fn sign_body(tx_id: &str, bundler_address: &str) -> Vec<u8> {
     .await
     .unwrap();
 
-    lazy_static! {
-        static ref KEY: PKey<Private> = {
-            let file: String =
-                String::from_utf8(include_bytes!("../../../wallet.json").to_vec()).unwrap();
-            let key: JsonWebKey = file.parse().unwrap();
-            let pem = key.key.to_pem();
-            PKey::private_key_from_pem(pem.as_bytes()).unwrap()
-        };
-    };
-
-    let mut signer = sign::Signer::new(MessageDigest::sha256(), &KEY).unwrap();
+    let mut signer = sign::Signer::new(MessageDigest::sha256(), &validator_key).unwrap();
     signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
     signer.update(&message).unwrap();
     let mut sig = vec![0; 512];
-    signer.sign(&mut sig).unwrap();
+    let len = signer.sign(&mut sig).unwrap();
+
+    sig.truncate(len);
 
     sig
 }
 
 #[cfg(test)]
 mod tests {
+    use bundlr_sdk::deep_hash::{DeepHashChunk, ONE_AS_BUFFER};
+    use bundlr_sdk::deep_hash_sync::deep_hash_sync;
+    use data_encoding::BASE64URL_NOPAD;
+    use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPrivate, RsaPublic};
+    use openssl::hash::MessageDigest;
+    use openssl::pkey::{PKey, Private, Public};
+    use openssl::rsa::{Padding, Rsa};
+    use openssl::sha::Sha256;
+    use openssl::sign::{self, Signer, Verifier};
+
+    use crate::consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER};
+
     use super::UnsignedBody;
     use super::{sign_body, verify_body};
 
-    #[test]
-    fn test_sign() {
-        dotenv::dotenv();
+    fn bundler_key() -> (JsonWebKey, PKey<Private>) {
+        let rsa = Rsa::generate(2048).unwrap();
+        let n = rsa.n().to_vec().into();
 
-        let body = UnsignedBody {
-            id: "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk".into(),
-            signature: "0QaA-U51cTPGqKgxquN0-0NYB-P09uHaReR4U9iZwmYNgx7u9DQbDVYrunmUChAy8IAlan4Qi7mKKFKHk3QAzR71MggMQ7nsp9tvk-OYnytFiVoiI1xRuKKFT_86kb5Eq5Oj-7vgM6XR6Giv44-33Ma1MEpuvW6FEEkfqPpdritaNgmBuv6GsEL3CGqutC5pOW1eBev3i3VSVbICfcHUgKvbklPOI5k2eez3_K3bC1qOeXl3Twr3yEPuSqZjaW5Xo5F81rznvsrxj93yT53kTAb-70EZVBWSqKIh8-JClMYjMQ3xKhrNDEYlR4lXapn3FSP2wkMkbCSay53u-rdQADqh-bjwg5Jf4JwULTFS10cRBiYpG7fHFztjzRVmnA4aUrpkzLUwjOldYFNr3z48h14l4hIoGZTK6z87_ycsPaKGocCP_qCJfr0o8FaYgXNKMIU_uNeuGqZ0Qr_iebnu3CQUkpWgFNwE-WxnQDOYDomMXDPkCYzehJiCEdWcQOwOlGHbMBLngDmVO0r6ZYbea3e9ahp5NoBxbP9xbY5Vsdmt-ENrt2bdfTz4Ek4rKQ_x0xKdO3nO-sLfONyqX1BcFTqXsK_X-SgVMVUh2ObzlBKEUOEle_9NfIptidVVkiiuiDrnR7_Tgq0RqLP5VbHYsYCNfMVnM33GP1cabgcuquM".into(),
-            block: 500,
-            validators: vec![],
+        let pkey = PKey::from_rsa(rsa).unwrap();
+        let private_der = pkey.private_key_to_der().unwrap();
+
+        (
+            JsonWebKey::new(Key::RSA {
+                public: RsaPublic {
+                    e: PublicExponent,
+                    n,
+                },
+                private: None,
+            }),
+            PKey::private_key_from_der(&private_der.as_slice()).unwrap(),
+        )
+    }
+
+    fn validator_key() -> JsonWebKey {
+        let rsa = Rsa::generate(2048).unwrap();
+
+        JsonWebKey::new(Key::RSA {
+            public: RsaPublic {
+                e: PublicExponent,
+                n: rsa.n().to_vec().into(),
+            },
+            private: Some(RsaPrivate {
+                d: rsa.d().to_vec().into(),
+                p: rsa.p().map(|v| v.to_vec().into()),
+                q: rsa.q().map(|v| v.to_vec().into()),
+                dp: rsa.dmp1().map(|v| v.to_vec().into()),
+                dq: rsa.dmq1().map(|v| v.to_vec().into()),
+                qi: rsa.iqmp().map(|v| v.to_vec().into()),
+            }),
+        })
+    }
+
+    fn to_private_key(key: &JsonWebKey) -> Result<PKey<Private>, ()> {
+        let der: Vec<u8> = key.key.try_to_der().map_err(|err| {
+            eprintln!("Failed to extract der: {:?}", err);
+            ()
+        })?;
+        PKey::private_key_from_der(der.as_slice()).map_err(|err| {
+            eprintln!("Failed to extract public key from der: {:?}", err);
+            ()
+        })
+    }
+
+    fn to_public_key(jwk: &JsonWebKey) -> Result<PKey<Public>, ()> {
+        let der = if jwk.key.is_private() {
+            let pub_key = jwk.key.to_public().ok_or_else(|| {
+                eprintln!("Key has no public part");
+            })?;
+            pub_key.try_to_der().map_err(|err| {
+                eprintln!("Failed to extract der: {:?}", err);
+                ()
+            })?
+        } else {
+            jwk.key.try_to_der().map_err(|err| {
+                eprintln!("Failed to extract der: {:?}", err);
+                ()
+            })?
+        };
+        PKey::public_key_from_der(der.as_slice()).map_err(|err| {
+            eprintln!("Failed to extract public key from der: {:?}", err);
+            ()
+        })
+    }
+
+    fn to_address(key: &JsonWebKey) -> Result<String, ()> {
+        let pub_key: PKey<Public> = to_public_key(key)?;
+        let mut hasher = Sha256::new();
+        hasher.update(&pub_key.rsa().unwrap().n().to_vec());
+        let hash = hasher.finish();
+        Ok(BASE64URL_NOPAD.encode(&hash))
+    }
+
+    fn test_message(signing_key: &PKey<Private>) -> UnsignedBody {
+        let tx_id = "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk";
+        let block = 500;
+        let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
+            DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(tx_id.into()),
+            DeepHashChunk::Chunk(format!("{}", block).into()),
+        ]))
+        .unwrap();
+
+        let (buf, len) = {
+            let mut signer = sign::Signer::new(MessageDigest::sha256(), &signing_key).unwrap();
+            signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
+            signer.update(&message).unwrap();
+            let mut buf = vec![0; 512];
+            let len = signer.sign(&mut buf).unwrap();
+            (buf, len)
         };
 
-        assert!(verify_body(&body));
+        let sig = BASE64URL_NOPAD.encode(&buf[0..len]);
+
+        UnsignedBody {
+            id: tx_id.to_string(),
+            signature: sig,
+            block,
+            validators: vec![],
+        }
+    }
+
+    #[test]
+    fn get_public_key_from_public_key_only_jwk() {
+        let (jwk, _) = bundler_key();
+
+        let pub_key = to_public_key(&jwk);
+        assert!(pub_key.is_ok());
+    }
+
+    #[test]
+    fn get_public_key_from_private_key_containing_jwk() {
+        let jwk = validator_key();
+
+        let pub_key = to_public_key(&jwk);
+        assert!(pub_key.is_ok());
+    }
+
+    #[test]
+    fn get_private_key_from_private_key_containing_jwk() {
+        let jwk = validator_key();
+
+        let key = to_private_key(&jwk);
+        assert!(key.is_ok());
+    }
+
+    #[test]
+    fn get_private_key_fails_for_public_key_only_jwk() {
+        let (jwk, _) = bundler_key();
+
+        let key = to_private_key(&jwk);
+        assert!(key.is_err());
+    }
+
+    #[test]
+    fn test_verify_body() {
+        let (bundler_key, signing_key) = bundler_key();
+        let body = test_message(&signing_key);
+        let key = to_public_key(&bundler_key).unwrap();
+        assert!(verify_body(&key, &body));
+    }
+
+    #[test]
+    fn test_signing_with_bundler_key() {
+        let (jwk, signing_key) = bundler_key();
+
+        let data = b"hello, world!";
+
+        // Sign the data
+        let mut signer = Signer::new(MessageDigest::sha256(), &signing_key).unwrap();
+        signer.update(data).unwrap();
+        let signature = signer.sign_to_vec().unwrap();
+
+        // Verify the data
+        let pub_key = to_public_key(&jwk).unwrap();
+        let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap();
+        verifier.update(data).unwrap();
+        assert!(verifier.verify(&signature).unwrap());
+    }
+
+    #[test]
+    fn test_signing_with_validator_key() {
+        let jwk = validator_key();
+
+        let data = b"hello, world!";
+
+        // Sign the data
+        let priv_key = to_private_key(&jwk).unwrap();
+        let mut signer = Signer::new(MessageDigest::sha256(), &priv_key).unwrap();
+        signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
+        signer.update(data).unwrap();
+        let signature = signer.sign_to_vec().unwrap();
+
+        // Verify the data
+        let pub_key = to_public_key(&jwk).unwrap();
+        let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap();
+        verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
+        verifier.update(data).unwrap();
+        assert!(verifier.verify(&signature).unwrap());
     }
 
     #[actix_rt::test]
-    async fn test_verify() {
-        dotenv::dotenv();
-        dbg!(
-            sign_body(
-                "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk",
-                "YPGBC5bssYfEmF5t4rHDiVRF3dfx1OCobOdJEl70SX8"
-            )
-            .await
-        );
+    async fn test_sign_body() {
+        let (bundler_jwk, bundler_signing_key) = bundler_key();
+        let validator_jwk = validator_key();
+        let body = test_message(&bundler_signing_key);
+
+        let sig = sign_body(
+            &to_private_key(&validator_jwk).unwrap(),
+            &to_address(&bundler_jwk).unwrap(),
+            &body.id,
+        )
+        .await;
+
+        let tx_id = body.id.as_bytes().to_vec();
+        let bundler_address = to_address(&bundler_jwk).unwrap();
+        let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
+            DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(tx_id.into()),
+            DeepHashChunk::Chunk(bundler_address.into()),
+        ]))
+        .unwrap();
+
+        let validator_key = to_public_key(&validator_jwk).unwrap();
+        let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &validator_key).unwrap();
+        verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
+        verifier.update(&message).unwrap();
+        let verified = verifier.verify(&sig).unwrap();
+        assert!(verified)
     }
 }

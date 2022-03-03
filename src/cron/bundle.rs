@@ -5,7 +5,7 @@ use super::slasher::vote_slash;
 use super::transactions::get_transactions;
 use crate::cron::arweave::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{NewBundle, NewTransaction};
-use crate::database::queries::*;
+use crate::database::queries::{self, *};
 use crate::types::Validator;
 use awc::Client;
 use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
@@ -42,7 +42,13 @@ pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
     })
 }
 
-pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError> {
+pub async fn validate_bundler<Context>(
+    ctx: &Context,
+    bundler: Bundler,
+) -> Result<(), ValidatorCronError>
+where
+    Context: queries::RequestContext,
+{
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
     let txs_req = arweave
         .get_latest_transactions(&bundler.address, Some(50), None)
@@ -58,7 +64,7 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
 
     let txs_req = &txs_req.unwrap().0;
     for bundle_tx in txs_req {
-        let res = validate_bundle(&arweave, &bundler, bundle_tx).await;
+        let res = validate_bundle(ctx, &arweave, &bundler, bundle_tx).await;
         if let Err(err) = res {
             match err {
                 ValidatorCronError::TxNotFound => todo!(),
@@ -81,12 +87,16 @@ pub async fn validate_bundler(bundler: Bundler) -> Result<(), ValidatorCronError
     Ok(())
 }
 
-async fn validate_bundle(
+async fn validate_bundle<Context>(
+    ctx: &Context,
     arweave: &Arweave,
     bundler: &Bundler,
     bundle: &ArweaveTx,
-) -> Result<(), ValidatorCronError> {
-    let block_ok = check_bundle_block(bundler, bundle).await;
+) -> Result<(), ValidatorCronError>
+where
+    Context: queries::RequestContext,
+{
+    let block_ok = check_bundle_block(ctx, bundler, bundle).await;
     let mut current_block: Option<i64> = None;
     if let Err(err) = block_ok {
         return Err(err);
@@ -121,7 +131,7 @@ async fn validate_bundle(
         &bundle.id
     );
     for bundle_tx in bundle_txs {
-        let tx_receipt = verify_bundle_tx(&bundle_tx, current_block).await;
+        let tx_receipt = verify_bundle_tx(ctx, &bundle_tx, current_block).await;
         if let Err(err) = tx_receipt {
             info!("Error found in transaction {} : {}", &bundle_tx.tx_id, err);
             return Err(ValidatorCronError::TxInvalid);
@@ -136,10 +146,14 @@ async fn validate_bundle(
     Ok(())
 }
 
-async fn check_bundle_block(
+async fn check_bundle_block<Context>(
+    ctx: &Context,
     bundler: &Bundler,
     bundle: &ArweaveTx,
-) -> Result<Option<i64>, ValidatorCronError> {
+) -> Result<Option<i64>, ValidatorCronError>
+where
+    Context: queries::RequestContext,
+{
     let current_block = bundle.block.as_ref().map(|b| b.height);
 
     if current_block.is_none() {
@@ -151,14 +165,17 @@ async fn check_bundle_block(
     } else {
         let current_block = current_block.unwrap();
         info!("Bundle {} included in block {}", &bundle.id, current_block);
-        let is_bundle_present = get_bundle(&bundle.id).is_ok();
+        let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
 
         if !is_bundle_present {
-            return match insert_bundle_in_db(NewBundle {
-                id: bundle.id.clone(),
-                owner_address: Some(bundler.address.clone()),
-                block_height: current_block,
-            }) {
+            return match insert_bundle_in_db(
+                ctx,
+                NewBundle {
+                    id: bundle.id.clone(),
+                    owner_address: Some(bundler.address.clone()),
+                    block_height: current_block,
+                },
+            ) {
                 Ok(()) => {
                     info!("Bundle {} successfully stored", &bundle.id);
                     Ok(Some(current_block))
@@ -174,11 +191,15 @@ async fn check_bundle_block(
     }
 }
 
-async fn verify_bundle_tx(
+async fn verify_bundle_tx<Context>(
+    ctx: &Context,
     bundle_tx: &Item,
     current_block: Option<i64>,
-) -> Result<(), ValidatorCronError> {
-    let tx = get_tx(&bundle_tx.tx_id).await;
+) -> Result<(), ValidatorCronError>
+where
+    Context: queries::RequestContext,
+{
+    let tx = get_tx(ctx, &bundle_tx.tx_id).await;
     let mut tx_receipt: Option<TxReceipt> = None;
     if tx.is_ok() {
         let tx = tx.unwrap();
@@ -201,16 +222,19 @@ async fn verify_bundle_tx(
         Some(receipt) => {
             let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
             if tx_is_ok && receipt.block <= current_block.unwrap() {
-                insert_tx_in_db(&NewTransaction {
-                    id: receipt.tx_id.clone(),
-                    epoch: 0, // TODO: implement epoch correctly
-                    block_promised: receipt.block,
-                    block_actual: current_block,
-                    signature: receipt.signature.as_bytes().to_vec(),
-                    validated: true,
-                    bundle_id: Some(bundle_tx.tx_id.clone()),
-                    sent_to_leader: false,
-                });
+                insert_tx_in_db(
+                    ctx,
+                    &NewTransaction {
+                        id: receipt.tx_id.clone(),
+                        epoch: 0, // TODO: implement epoch correctly
+                        block_promised: receipt.block,
+                        block_actual: current_block,
+                        signature: receipt.signature.as_bytes().to_vec(),
+                        validated: true,
+                        bundle_id: Some(bundle_tx.tx_id.clone()),
+                        sent_to_leader: false,
+                    },
+                );
             } else {
                 // TODO: vote slash
             }

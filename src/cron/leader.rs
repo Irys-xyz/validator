@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use serde::Serialize;
 use tracing::error;
 
 use super::error::ValidatorCronError;
 use crate::database::models::NewTransaction;
-use crate::database::queries::{get_unposted_txs, update_tx};
+use crate::database::queries::{self, get_unposted_txs, update_tx};
 use crate::state::SharedValidatorState;
 
 #[derive(Default)]
@@ -27,8 +29,14 @@ pub struct ReqBody {
     validator_signatures: Vec<ValidatorSignature>,
 }
 
-pub async fn send_txs_to_leader(state: SharedValidatorState) -> Result<(), ValidatorCronError> {
-    let _res = post_transactions().await;
+pub async fn send_txs_to_leader<Context>(
+    ctx: Arc<Context>,
+    state: SharedValidatorState,
+) -> Result<(), ValidatorCronError>
+where
+    Context: queries::RequestContext,
+{
+    let _res = post_transactions(&*ctx).await;
     Ok(())
 }
 
@@ -39,8 +47,11 @@ pub fn get_leader() -> Result<Validator, ValidatorCronError> {
     })
 }
 
-pub async fn post_transactions() -> std::io::Result<()> {
-    let txs = get_unposted_txs().await.unwrap();
+pub async fn post_transactions<Context>(ctx: &Context) -> std::io::Result<()>
+where
+    Context: queries::RequestContext,
+{
+    let txs = get_unposted_txs(ctx).await.unwrap();
     let leader = get_leader().unwrap();
     let client = reqwest::Client::new();
 
@@ -58,16 +69,19 @@ pub async fn post_transactions() -> std::io::Result<()> {
             .await;
 
         if req.is_ok() {
-            let update = update_tx(&NewTransaction {
-                id: tx.id,
-                epoch: tx.epoch,
-                block_promised: tx.block_promised,
-                block_actual: tx.block_actual,
-                signature: tx.signature,
-                validated: tx.validated,
-                bundle_id: tx.bundle_id,
-                sent_to_leader: true,
-            })
+            let update = update_tx(
+                ctx,
+                &NewTransaction {
+                    id: tx.id,
+                    epoch: tx.epoch,
+                    block_promised: tx.block_promised,
+                    block_actual: tx.block_actual,
+                    signature: tx.signature,
+                    validated: tx.validated,
+                    bundle_id: tx.bundle_id,
+                    sent_to_leader: true,
+                },
+            )
             .await;
 
             if let Err(e) = update {
