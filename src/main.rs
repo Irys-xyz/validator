@@ -202,6 +202,12 @@ impl server::routes::sign::Config for AppContext {
     }
 }
 
+impl server::routes::get_tx::Config for AppContext {
+    fn get_validator_state(&self) -> &SharedValidatorState {
+        &self.validator_state
+    }
+}
+
 #[actix_web::main]
 async fn main() -> () {
     dotenv::dotenv().ok();

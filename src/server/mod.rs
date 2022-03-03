@@ -20,6 +20,7 @@ use routes::post_tx::post_tx;
 use tokio::runtime::Handle;
 
 use crate::server::routes::sign::sign_route;
+use crate::state::SharedValidatorState;
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
@@ -29,7 +30,8 @@ pub trait RuntimeContext {
 
 pub async fn run_server<Context>(ctx: Context) -> std::io::Result<()>
 where
-    Context: RuntimeContext + routes::sign::Config + Clone + Send + 'static,
+    Context:
+        RuntimeContext + routes::sign::Config + routes::get_tx::Config + Clone + Send + 'static,
 {
     env_logger::init();
 
@@ -56,15 +58,14 @@ where
             .app_data(Data::new(postgres_pool))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
+            .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
             .service(
                 web::scope("/cosigner")
-                    .route("/tx/{tx_id}", web::get().to(get_tx))
                     .route("/tx", web::post().to(post_tx))
                     .route("/sign", web::post().to(sign_route::<Context>)),
             )
             .service(
                 web::scope("/leader")
-                    .route("/tx/{tx_id}", web::get().to(HttpResponse::Ok))
                     .route("/tx", web::post().to(HttpResponse::Ok))
                     .route("/sign", web::post().to(HttpResponse::Ok)),
             )
