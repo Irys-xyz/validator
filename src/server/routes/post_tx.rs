@@ -1,6 +1,13 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{
+    collections::HashMap,
+    sync::{atomic::Ordering, RwLock},
+};
 
-use crate::{consts::BUNDLR_AS_BUFFER, server::error::ValidatorServerError};
+use crate::{
+    consts::BUNDLR_AS_BUFFER,
+    server::error::ValidatorServerError,
+    state::{SharedValidatorState, ValidatorState},
+};
 use actix_web::{
     web::{Data, Json},
     HttpResponse,
@@ -40,13 +47,26 @@ pub struct PostTxBody {
     validator_signatures: Vec<ValidatorSignature>,
 }
 
+pub trait Config {
+    fn get_validator_state(&self) -> &SharedValidatorState;
+}
+
 // Receive Bundlr transaction receipt
-pub async fn post_tx(
+pub async fn post_tx<Config>(
+    ctx: Data<Config>,
     body: Json<PostTxBody>,
     redis_client: Data<redis::Client>,
     _awc_client: Data<awc::Client>,
     validators: Data<RwLock<Vec<String>>>,
-) -> actix_web::Result<HttpResponse, ValidatorServerError> {
+) -> actix_web::Result<HttpResponse, ValidatorServerError>
+where
+    Config: self::Config,
+{
+    let s = ctx.get_validator_state().load(Ordering::SeqCst);
+    if s != ValidatorState::Leader {
+        return Ok(HttpResponse::BadRequest().finish());
+    }
+
     let _validators = validators.into_inner();
     let body = body.into_inner();
     let mut conn = redis_client.get_async_connection().await?;

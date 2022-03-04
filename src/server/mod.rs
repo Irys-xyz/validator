@@ -20,7 +20,6 @@ use routes::post_tx::post_tx;
 use tokio::runtime::Handle;
 
 use crate::server::routes::sign::sign_route;
-use crate::state::SharedValidatorState;
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
@@ -30,8 +29,13 @@ pub trait RuntimeContext {
 
 pub async fn run_server<Context>(ctx: Context) -> std::io::Result<()>
 where
-    Context:
-        RuntimeContext + routes::sign::Config + routes::get_tx::Config + Clone + Send + 'static,
+    Context: RuntimeContext
+        + routes::sign::Config
+        + routes::get_tx::Config
+        + routes::post_tx::Config
+        + Clone
+        + Send
+        + 'static,
 {
     env_logger::init();
 
@@ -59,16 +63,8 @@ where
             .wrap(Logger::default())
             .route("/", web::get().to(index))
             .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
-            .service(
-                web::scope("/cosigner")
-                    .route("/tx", web::post().to(post_tx))
-                    .route("/sign", web::post().to(sign_route::<Context>)),
-            )
-            .service(
-                web::scope("/leader")
-                    .route("/tx", web::post().to(HttpResponse::Ok))
-                    .route("/sign", web::post().to(HttpResponse::Ok)),
-            )
+            .service(web::scope("/cosigner").route("/sign", web::post().to(sign_route::<Context>)))
+            .service(web::scope("/leader").route("/tx", web::post().to(post_tx::<Context>)))
             .service(web::scope("/idle").route("/", web::get().to(index)))
     })
     .shutdown_timeout(5)

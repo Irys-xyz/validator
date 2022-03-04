@@ -200,9 +200,19 @@ impl server::routes::sign::Config for AppContext {
     fn validator_public_key(&self) -> &openssl::pkey::PKey<Public> {
         &self.validator_public_key
     }
+
+    fn get_validator_state(&self) -> &SharedValidatorState {
+        todo!()
+    }
 }
 
 impl server::routes::get_tx::Config for AppContext {
+    fn get_validator_state(&self) -> &SharedValidatorState {
+        &self.validator_state
+    }
+}
+
+impl server::routes::post_tx::Config for AppContext {
     fn get_validator_state(&self) -> &SharedValidatorState {
         &self.validator_state
     }
@@ -213,8 +223,6 @@ async fn main() -> () {
     dotenv::dotenv().ok();
 
     let config = AppConfig::parse();
-    info!("here");
-
     let ctx = AppContext::new(&config);
 
     if !config.no_cron {
