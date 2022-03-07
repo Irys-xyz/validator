@@ -25,17 +25,16 @@ use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_ADDRESS, VALIDATOR_AS_BUFFER},
     database::{models::NewTransaction, schema::transactions::dsl::*},
     server::error::ValidatorServerError,
-    state::{SharedValidatorState, ValidatorState},
+    state::{ValidatorState, ValidatorStateTrait},
     types::DbPool,
 };
 
-pub trait Config {
+pub trait Config: ValidatorStateTrait {
     fn bundler_address(&self) -> &str;
     fn bundler_public_key(&self) -> &PKey<Public>;
     fn validator_address(&self) -> &str;
     fn validator_private_key(&self) -> &PKey<Private>;
     fn validator_public_key(&self) -> &PKey<Public>;
-    fn get_validator_state(&self) -> &SharedValidatorState;
 }
 
 #[derive(Deserialize)]

@@ -5,14 +5,10 @@ use actix_web::{web::Data, HttpResponse};
 use crate::{
     database::{models::Transaction, schema::transactions::dsl::*},
     server::error::ValidatorServerError,
-    state::{SharedValidatorState, ValidatorState},
+    state::ValidatorStateTrait,
     types::DbPool,
 };
 use diesel::prelude::*;
-
-pub trait Config {
-    fn get_validator_state(&self) -> &SharedValidatorState;
-}
 
 pub async fn get_tx<Config>(
     _ctx: Data<Config>,
@@ -20,7 +16,7 @@ pub async fn get_tx<Config>(
     path: (String,),
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Config: self::Config,
+    Config: ValidatorStateTrait,
 {
     let res = actix_rt::task::spawn_blocking(move || {
         let conn = db.get().unwrap();

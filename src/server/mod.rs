@@ -19,7 +19,7 @@ use routes::index::index;
 use routes::post_tx::post_tx;
 use tokio::runtime::Handle;
 
-use crate::server::routes::sign::sign_route;
+use crate::{server::routes::sign::sign_route, state::ValidatorStateTrait};
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
@@ -29,13 +29,7 @@ pub trait RuntimeContext {
 
 pub async fn run_server<Context>(ctx: Context) -> std::io::Result<()>
 where
-    Context: RuntimeContext
-        + routes::sign::Config
-        + routes::get_tx::Config
-        + routes::post_tx::Config
-        + Clone
-        + Send
-        + 'static,
+    Context: RuntimeContext + routes::sign::Config + ValidatorStateTrait + Clone + Send + 'static,
 {
     env_logger::init();
 

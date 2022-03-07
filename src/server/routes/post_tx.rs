@@ -6,7 +6,7 @@ use std::{
 use crate::{
     consts::BUNDLR_AS_BUFFER,
     server::error::ValidatorServerError,
-    state::{SharedValidatorState, ValidatorState},
+    state::{ValidatorState, ValidatorStateTrait},
 };
 use actix_web::{
     web::{Data, Json},
@@ -47,10 +47,6 @@ pub struct PostTxBody {
     validator_signatures: Vec<ValidatorSignature>,
 }
 
-pub trait Config {
-    fn get_validator_state(&self) -> &SharedValidatorState;
-}
-
 // Receive Bundlr transaction receipt
 pub async fn post_tx<Config>(
     ctx: Data<Config>,
@@ -60,7 +56,7 @@ pub async fn post_tx<Config>(
     validators: Data<RwLock<Vec<String>>>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Config: self::Config,
+    Config: ValidatorStateTrait,
 {
     let s = ctx.get_validator_state().load(Ordering::SeqCst);
     if s != ValidatorState::Leader {

@@ -21,7 +21,7 @@ use openssl::{
 };
 use paris::info;
 use server::{run_server, RuntimeContext};
-use state::{generate_state, SharedValidatorState};
+use state::{generate_state, SharedValidatorState, ValidatorStateTrait};
 use std::{fs, net::SocketAddr};
 
 use crate::database::queries::RequestContext;
@@ -200,19 +200,9 @@ impl server::routes::sign::Config for AppContext {
     fn validator_public_key(&self) -> &openssl::pkey::PKey<Public> {
         &self.validator_public_key
     }
-
-    fn get_validator_state(&self) -> &SharedValidatorState {
-        todo!()
-    }
 }
 
-impl server::routes::get_tx::Config for AppContext {
-    fn get_validator_state(&self) -> &SharedValidatorState {
-        &self.validator_state
-    }
-}
-
-impl server::routes::post_tx::Config for AppContext {
+impl ValidatorStateTrait for AppContext {
     fn get_validator_state(&self) -> &SharedValidatorState {
         &self.validator_state
     }

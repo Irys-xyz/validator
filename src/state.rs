@@ -35,3 +35,6 @@ pub type SharedValidatorState = Arc<AtomicU8>;
 pub fn generate_state() -> SharedValidatorState {
     Arc::new(AtomicU8::from(&ValidatorState::Cosigner))
 }
+pub trait ValidatorStateTrait {
+    fn get_validator_state(&self) -> &SharedValidatorState;
+}
