@@ -17,16 +17,16 @@ pub struct GraphqlNodes {
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct GraphqlEdges {
     pub edges: Vec<GraphqlNodes>,
-    pub pageInfo: PageInfo,
+    pub page_info: PageInfo,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct PageInfo {
-    pub hasNextPage: bool,
+    pub has_next_page: bool,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -60,10 +60,7 @@ pub async fn get_transactions(
 
     let raw_variables = format!(
         "{{\"limit\": {}, \"after\": {}}}",
-        match limit {
-            None => r"10".to_string(),
-            Some(a) => format!(r"{}", a),
-        },
+        limit.unwrap_or(10),
         match after {
             None => r"null".to_string(),
             Some(a) => a,
@@ -90,7 +87,7 @@ pub async fn get_transactions(
                 txs.push(tx.node.clone());
                 end_cursor = Some(tx.cursor.clone());
             }
-            let has_next_page = res.data.transaction.pageInfo.hasNextPage;
+            let has_next_page = res.data.transaction.page_info.has_next_page;
             return Ok((txs, has_next_page, end_cursor));
         } else {
             return Err(TxsError::TxNotFound);

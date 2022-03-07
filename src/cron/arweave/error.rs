@@ -5,6 +5,8 @@ use std::convert::From;
 pub enum ArweaveError {
     TxsNotFound,
     MalformedQuery,
+    InternalServerError,
+    GatewayTimeout,
     UnknownErr,
 }
 

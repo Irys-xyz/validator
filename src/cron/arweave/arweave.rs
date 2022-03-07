@@ -72,16 +72,16 @@ pub struct GraphqlNodes {
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct GraphqlEdges {
     pub edges: Vec<GraphqlNodes>,
-    pub pageInfo: PageInfo,
+    pub page_info: PageInfo,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct PageInfo {
-    pub hasNextPage: bool,
+    pub has_next_page: bool,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -220,14 +220,11 @@ impl Arweave {
         first: Option<i32>,
         after: Option<String>,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError> {
-        let raw_query = "query($owners: [String!], $first: Int) { transactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } fee { winston } quantity { winston } data { size type } } } } }".to_string();
+        let raw_query = "query($owners: [String!], $first: Int) { transactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } fee { winston } quantity { winston } data { size type } } } } }";
         let raw_variables = format!(
             "{{\"owners\": [\"{}\"], \"first\": {}, \"after\": {}}}",
             owner,
-            match first {
-                None => r"10".to_string(),
-                Some(a) => format!(r"{}", a),
-            },
+            first.unwrap_or(10),
             match after {
                 None => r"null".to_string(),
                 Some(a) => a,
@@ -254,12 +251,14 @@ impl Arweave {
                     txs.push(tx.node.clone());
                     end_cursor = Some(tx.cursor.clone());
                 }
-                let has_next_page = res.data.transactions.pageInfo.hasNextPage;
+                let has_next_page = res.data.transactions.page_info.has_next_page;
 
                 Ok((txs, has_next_page, end_cursor))
             }
             400 => Err(ArweaveError::MalformedQuery),
             404 => Err(ArweaveError::TxsNotFound),
+            500 => Err(ArweaveError::InternalServerError),
+            504 => Err(ArweaveError::GatewayTimeout),
             _ => Err(ArweaveError::UnknownErr),
         }
     }

@@ -8,6 +8,7 @@ pub enum ValidatorCronError {
     TxsFromAddressNotFound,
     BundleNotInsertedInDB,
     TxInvalid,
+    FileError,
 }
 
 #[derive(Debug, Display, Error, Clone)]
