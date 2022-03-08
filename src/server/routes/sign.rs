@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use actix_web::{
     web::{Data, Json},
     HttpResponse,
@@ -23,10 +25,11 @@ use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_ADDRESS, VALIDATOR_AS_BUFFER},
     database::{models::NewTransaction, schema::transactions::dsl::*},
     server::error::ValidatorServerError,
+    state::{ValidatorState, ValidatorStateTrait},
     types::DbPool,
 };
 
-pub trait Config {
+pub trait Config: ValidatorStateTrait {
     fn bundler_address(&self) -> &str;
     fn bundler_public_key(&self) -> &PKey<Public>;
     fn validator_address(&self) -> &str;
@@ -61,6 +64,11 @@ pub async fn sign_route<Config>(
 where
     Config: self::Config,
 {
+    let s = config.get_validator_state().load(Ordering::SeqCst);
+    if s != ValidatorState::Cosigner {
+        return Ok(HttpResponse::BadRequest().finish());
+    }
+
     let body = body.into_inner();
 
     let mut conn = redis.check_out(PoolDefault).await.unwrap();

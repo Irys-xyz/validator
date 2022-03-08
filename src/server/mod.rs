@@ -1,12 +1,12 @@
 mod error;
 pub(crate) mod routes;
 
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 
 use actix_web::{
     middleware::Logger,
     web::{self, Data},
-    App, HttpServer,
+    App, HttpResponse, HttpServer,
 };
 use diesel::{
     r2d2::{ConnectionManager, Pool},
@@ -19,7 +19,7 @@ use routes::index::index;
 use routes::post_tx::post_tx;
 use tokio::runtime::Handle;
 
-use crate::server::routes::sign::sign_route;
+use crate::{server::routes::sign::sign_route, state::ValidatorStateTrait};
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
@@ -29,18 +29,12 @@ pub trait RuntimeContext {
 
 pub async fn run_server<Context>(ctx: Context) -> std::io::Result<()>
 where
-    Context: RuntimeContext + routes::sign::Config + Clone + Send + 'static,
+    Context: RuntimeContext + routes::sign::Config + ValidatorStateTrait + Clone + Send + 'static,
 {
-    info!("Starting up HTTP server...");
-
     env_logger::init();
-    info!("Starting up HTTP server...");
 
     let redis_connection_string = ctx.redis_connection_url().to_string();
-    info!("Starting up HTTP server...");
-
     let db_url = ctx.database_connection_url().to_string();
-
     info!("Starting up HTTP server...");
 
     let server_config = ctx.clone();
@@ -62,9 +56,10 @@ where
             .app_data(Data::new(postgres_pool))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
-            .route("/tx/{tx_id}", web::get().to(get_tx))
-            .route("/tx", web::post().to(post_tx))
-            .route("/sign", web::post().to(sign_route::<Context>))
+            .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
+            .service(web::scope("/cosigner").route("/sign", web::post().to(sign_route::<Context>)))
+            .service(web::scope("/leader").route("/tx", web::post().to(post_tx::<Context>)))
+            .service(web::scope("/idle").route("/", web::get().to(index)))
     })
     .shutdown_timeout(5)
     .bind(ctx.bind_address())?

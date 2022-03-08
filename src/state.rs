@@ -11,10 +11,9 @@ pub enum ValidatorState {
 impl From<&ValidatorState> for u8 {
     fn from(v: &ValidatorState) -> u8 {
         match v {
-            ValidatorState::Leader => u8::from(0),
-            ValidatorState::Cosigner => u8::from(1),
-            ValidatorState::Idle => u8::from(2),
-            _ => panic!("Unknown value: {:?}", v),
+            ValidatorState::Leader => 0,
+            ValidatorState::Cosigner => 1,
+            ValidatorState::Idle => 2,
         }
     }
 }
@@ -35,4 +34,7 @@ pub type SharedValidatorState = Arc<AtomicU8>;
 
 pub fn generate_state() -> SharedValidatorState {
     Arc::new(AtomicU8::from(&ValidatorState::Cosigner))
+}
+pub trait ValidatorStateTrait {
+    fn get_validator_state(&self) -> &SharedValidatorState;
 }

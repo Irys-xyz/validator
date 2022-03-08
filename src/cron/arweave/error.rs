@@ -4,8 +4,9 @@ use std::convert::From;
 #[derive(Debug, Display, Error, Clone)]
 pub enum ArweaveError {
     TxsNotFound,
-    TagNotFound,
     MalformedQuery,
+    InternalServerError,
+    GatewayTimeout,
     UnknownErr,
 }
 

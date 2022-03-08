@@ -6,9 +6,11 @@ use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
+use crate::state::SharedValidatorState;
 
 pub trait RequestContext {
     fn get_db_connection(&self) -> PgConnection;
+    fn get_validator_state(&self) -> &SharedValidatorState;
 }
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
@@ -53,7 +55,7 @@ where
     diesel::update(transactions::table.find(&tx.id))
         .set(&*tx)
         .get_result::<Transaction>(&conn)
-        .expect(&format!("Unable to find transaction {}", &tx.id));
+        .unwrap_or_else(|_| panic!("Unable to find transaction {}", &tx.id));
 
     Ok(())
 }

@@ -29,10 +29,7 @@ pub struct ReqBody {
     validator_signatures: Vec<ValidatorSignature>,
 }
 
-pub async fn send_txs_to_leader<Context>(
-    ctx: Arc<Context>,
-    state: SharedValidatorState,
-) -> Result<(), ValidatorCronError>
+pub async fn send_txs_to_leader<Context>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
 where
     Context: queries::RequestContext,
 {

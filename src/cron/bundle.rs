@@ -72,6 +72,7 @@ where
                 ValidatorCronError::TxsFromAddressNotFound => todo!(),
                 ValidatorCronError::BundleNotInsertedInDB => todo!(),
                 ValidatorCronError::TxInvalid => todo!(),
+                ValidatorCronError::FileError => todo!(),
             }
         }
     }
@@ -100,24 +101,20 @@ where
     let mut current_block: Option<i64> = None;
     if let Err(err) = block_ok {
         return Err(err);
-    } else {
-        current_block = block_ok.unwrap();
     }
     if current_block.is_none() {
         return Ok(());
     }
 
-    let path = arweave.get_tx_data(&bundle.id).await;
-    let mut file_path: Option<String> = None;
-    if path.is_ok() {
-        file_path = Some(path.unwrap());
-    } else {
-        error!("File path error {:?}", path);
-        return Ok(());
-    }
+    let path = match arweave.get_tx_data(&bundle.id).await {
+        Ok(path) => path,
+        Err(err) => {
+            error!("File path error {:?}", err);
+            return Err(ValidatorCronError::FileError);
+        }
+    };
 
-    let path_str = file_path.unwrap().to_string();
-    let bundle_txs = match verify_file_bundle(path_str.clone()).await {
+    let bundle_txs = match verify_file_bundle(path.clone()).await {
         Err(r) => {
             error!("Error verifying bundle {}:", r);
             Vec::new()
@@ -138,9 +135,9 @@ where
         }
     }
 
-    match std::fs::remove_file(path_str.clone()) {
-        Ok(_r) => info!("Successfully deleted {}", path_str),
-        Err(err) => error!("Error deleting file {} : {}", path_str, err),
+    match std::fs::remove_file(path.clone()) {
+        Ok(_r) => info!("Successfully deleted {}", path),
+        Err(err) => error!("Error deleting file {} : {}", path, err),
     };
 
     Ok(())
@@ -161,7 +158,7 @@ where
             "Bundle {} not included in any block, moving on ...",
             &bundle.id
         );
-        return Ok(None);
+        Ok(None)
     } else {
         let current_block = current_block.unwrap();
         info!("Bundle {} included in block {}", &bundle.id, current_block);
@@ -239,7 +236,7 @@ where
                 // TODO: vote slash
             }
         }
-        None => (),
+        None => todo!(),
     }
 
     Ok(())
