@@ -1,38 +1,43 @@
 table! {
     bundle (id) {
-        id -> Bpchar,
-        owner_address -> Nullable<Bpchar>,
-        block_height -> Int8,
+        id -> Nullable<Text>,
+        owner_address -> Nullable<Text>,
+        block_height -> BigInt,
     }
 }
 
 table! {
     leaders (address) {
-        address -> Bpchar,
+        address -> Nullable<Text>,
     }
 }
 
 table! {
     transactions (id) {
-        id -> Bpchar,
-        epoch -> Int8,
-        block_promised -> Int8,
-        block_actual -> Nullable<Int8>,
-        signature -> Bytea,
-        validated -> Bool,
-        bundle_id -> Nullable<Bpchar>,
-        sent_to_leader -> Bool,
+        id -> Nullable<Text>,
+        epoch -> BigInt,
+        block_promised -> BigInt,
+        block_actual -> Nullable<BigInt>,
+        signature -> Binary,
+        validated -> BigInt,
+        bundle_id -> Nullable<Text>,
+        sent_to_leader -> BigInt,
     }
 }
 
 table! {
     validators (address) {
-        address -> Bpchar,
-        url -> Nullable<Varchar>,
+        address -> Nullable<Text>,
+        url -> Nullable<Text>,
     }
 }
 
 joinable!(leaders -> validators (address));
 joinable!(transactions -> bundle (bundle_id));
 
-allow_tables_to_appear_in_same_query!(bundle, leaders, transactions, validators,);
+allow_tables_to_appear_in_same_query!(
+    bundle,
+    leaders,
+    transactions,
+    validators,
+);

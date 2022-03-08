@@ -13,7 +13,7 @@ use clap::Parser;
 use cron::run_crons;
 use data_encoding::BASE64URL_NOPAD;
 use database::queries;
-use diesel::{Connection, PgConnection};
+use diesel::{sqlite::SqliteConnection, Connection};
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use openssl::{
     pkey::{PKey, Private, Public},
@@ -156,8 +156,8 @@ impl AppContext {
 
 impl queries::RequestContext for AppContext {
     // FIXME: this should use connection pool
-    fn get_db_connection(&self) -> PgConnection {
-        PgConnection::establish(&self.database_url)
+    fn get_db_connection(&self) -> SqliteConnection {
+        SqliteConnection::establish(&self.database_url)
             .unwrap_or_else(|_| panic!("Error connecting to {}", self.database_url))
     }
 

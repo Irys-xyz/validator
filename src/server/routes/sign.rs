@@ -111,9 +111,9 @@ where
         block_promised: i64::try_from(body.block).unwrap(),
         block_actual: None,
         signature: sig.clone(),
-        validated: false,
+        validated: 0,
         bundle_id: None,
-        sent_to_leader: false,
+        sent_to_leader: 0,
     };
 
     actix_rt::task::spawn_blocking(move || {

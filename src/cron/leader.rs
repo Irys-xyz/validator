@@ -76,7 +76,7 @@ where
                     signature: tx.signature,
                     validated: tx.validated,
                     bundle_id: tx.bundle_id,
-                    sent_to_leader: true,
+                    sent_to_leader: 1,
                 },
             )
             .await;

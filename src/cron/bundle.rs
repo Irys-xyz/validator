@@ -227,9 +227,9 @@ where
                         block_promised: receipt.block,
                         block_actual: current_block,
                         signature: receipt.signature.as_bytes().to_vec(),
-                        validated: true,
+                        validated: 1,
                         bundle_id: Some(bundle_tx.tx_id.clone()),
-                        sent_to_leader: false,
+                        sent_to_leader: 0,
                     },
                 );
             } else {

@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 use diesel::result::Error;
-use diesel::{PgConnection, QueryDsl};
+use diesel::QueryDsl;
 extern crate diesel;
 use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
@@ -9,9 +9,8 @@ use crate::database::schema::{bundle, transactions};
 use crate::state::SharedValidatorState;
 
 pub trait RequestContext {
-    fn get_db_connection(&self) -> PgConnection;
-    fn get_validator_state(&self) -> &SharedValidatorState;
-}
+    fn get_db_connection(&self) -> SqliteConnection;
+}   
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
 where
@@ -77,7 +76,7 @@ where
 {
     let conn = ctx.get_db_connection();
     transactions
-        .filter(transactions::sent_to_leader.eq(false))
+        .filter(transactions::sent_to_leader.eq(0))
         .limit(25)
         .load::<Transaction>(&conn)
 }
