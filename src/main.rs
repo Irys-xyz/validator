@@ -160,10 +160,6 @@ impl queries::RequestContext for AppContext {
         SqliteConnection::establish(&self.database_url)
             .unwrap_or_else(|_| panic!("Error connecting to {}", self.database_url))
     }
-
-    fn get_validator_state(&self) -> &state::SharedValidatorState {
-        &self.validator_state
-    }
 }
 
 impl RuntimeContext for AppContext {

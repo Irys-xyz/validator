@@ -41,7 +41,7 @@ pub struct ValidatorSignature {
 pub struct PostTxBody {
     id: String,
     signature: String,
-    block: i64,
+    block: i32,
     address: String,
     #[serde(default)]
     validator_signatures: Vec<ValidatorSignature>,

@@ -10,7 +10,7 @@ use actix_web::{
 };
 use diesel::{
     r2d2::{ConnectionManager, Pool},
-    sqlite::{SqliteConnection},
+    sqlite::SqliteConnection,
 };
 use paris::info;
 use reool::RedisPool;

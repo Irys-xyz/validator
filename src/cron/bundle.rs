@@ -30,7 +30,7 @@ pub struct Bundler {
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
-    block: i64,
+    block: i32,
     tx_id: String,
     signature: String,
 }
@@ -98,7 +98,7 @@ where
     Context: queries::RequestContext,
 {
     let block_ok = check_bundle_block(ctx, bundler, bundle).await;
-    let mut current_block: Option<i64> = None;
+    let mut current_block: Option<i32> = None;
     if let Err(err) = block_ok {
         return Err(err);
     }
@@ -147,7 +147,7 @@ async fn check_bundle_block<Context>(
     ctx: &Context,
     bundler: &Bundler,
     bundle: &ArweaveTx,
-) -> Result<Option<i64>, ValidatorCronError>
+) -> Result<Option<i32>, ValidatorCronError>
 where
     Context: queries::RequestContext,
 {
@@ -168,7 +168,7 @@ where
             return match insert_bundle_in_db(
                 ctx,
                 NewBundle {
-                    id: bundle.id.clone(),
+                    id: Some(bundle.id.clone()),
                     owner_address: Some(bundler.address.clone()),
                     block_height: current_block,
                 },
@@ -191,7 +191,7 @@ where
 async fn verify_bundle_tx<Context>(
     ctx: &Context,
     bundle_tx: &Item,
-    current_block: Option<i64>,
+    current_block: Option<i32>,
 ) -> Result<(), ValidatorCronError>
 where
     Context: queries::RequestContext,
@@ -202,7 +202,7 @@ where
         let tx = tx.unwrap();
         tx_receipt = Some(TxReceipt {
             block: tx.block_promised,
-            tx_id: tx.id,
+            tx_id: tx.id.unwrap(),
             signature: match std::str::from_utf8(&tx.signature.to_vec()) {
                 Ok(v) => v.to_string(),
                 Err(e) => panic!("Invalid UTF-8 seq: {}", e),
@@ -222,7 +222,7 @@ where
                 insert_tx_in_db(
                     ctx,
                     &NewTransaction {
-                        id: receipt.tx_id.clone(),
+                        id: Some(receipt.tx_id),
                         epoch: 0, // TODO: implement epoch correctly
                         block_promised: receipt.block,
                         block_actual: current_block,

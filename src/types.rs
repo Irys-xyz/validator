@@ -1,6 +1,6 @@
 use diesel::{
     r2d2::{ConnectionManager, Pool},
-    sqlite::{SqliteConnection},
+    sqlite::SqliteConnection,
 };
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;

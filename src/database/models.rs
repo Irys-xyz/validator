@@ -5,40 +5,40 @@ use serde::Serialize;
 
 #[derive(Serialize, Queryable)]
 pub struct Bundle {
-    pub id: String,
+    pub id: Option<String>,
     pub owner_address: Option<String>,
-    pub block_height: i64,
+    pub block_height: i32,
 }
 
 #[derive(Insertable, Clone)]
 #[table_name = "bundle"]
 pub struct NewBundle {
-    pub id: String,
+    pub id: Option<String>,
     pub owner_address: Option<String>,
-    pub block_height: i64,
+    pub block_height: i32,
 }
 
 #[derive(Serialize, Queryable)]
 pub struct Transaction {
-    pub id: String,
-    pub epoch: i64,
-    pub block_promised: i64,
-    pub block_actual: Option<i64>,
+    pub id: Option<String>,
+    pub epoch: i32,
+    pub block_promised: i32,
+    pub block_actual: Option<i32>,
     pub signature: Vec<u8>,
-    pub validated: i64,
+    pub validated: i32,
     pub bundle_id: Option<String>,
-    pub sent_to_leader: i64,
+    pub sent_to_leader: i32,
 }
 
 #[derive(Insertable, Clone, AsChangeset)]
 #[table_name = "transactions"]
 pub struct NewTransaction {
-    pub id: String,
-    pub epoch: i64,
-    pub block_promised: i64,
-    pub block_actual: Option<i64>,
+    pub id: Option<String>,
+    pub epoch: i32,
+    pub block_promised: i32,
+    pub block_actual: Option<i32>,
     pub signature: Vec<u8>,
-    pub validated: i64,
+    pub validated: i32,
     pub bundle_id: Option<String>,
-    pub sent_to_leader: i64,
+    pub sent_to_leader: i32,
 }

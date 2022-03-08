@@ -55,7 +55,7 @@ struct SignedBody {
     validator_signature: String,
 }
 
-pub async fn sign_route<Config>(
+pub async fn sign_route<'a, Config>(
     config: Data<Config>,
     db: Data<DbPool>,
     redis: Data<RedisPool>,
@@ -103,12 +103,12 @@ where
     .await;
 
     // Add to db
-    let current_epoch = conn.get::<_, i64>("validator:epoch:current").await.unwrap();
+    let current_epoch = conn.get::<_, i32>("validator:epoch:current").await.unwrap();
 
     let new_transaction = NewTransaction {
-        id: body.id,
+        id: Some(body.id),
         epoch: current_epoch,
-        block_promised: i64::try_from(body.block).unwrap(),
+        block_promised: i32::try_from(body.block).unwrap(),
         block_actual: None,
         signature: sig.clone(),
         validated: 0,

@@ -2,7 +2,7 @@ table! {
     bundle (id) {
         id -> Nullable<Text>,
         owner_address -> Nullable<Text>,
-        block_height -> BigInt,
+        block_height -> Integer,
     }
 }
 
@@ -15,13 +15,13 @@ table! {
 table! {
     transactions (id) {
         id -> Nullable<Text>,
-        epoch -> BigInt,
-        block_promised -> BigInt,
-        block_actual -> Nullable<BigInt>,
+        epoch -> Integer,
+        block_promised -> Integer,
+        block_actual -> Nullable<Integer>,
         signature -> Binary,
-        validated -> BigInt,
+        validated -> Integer,
         bundle_id -> Nullable<Text>,
-        sent_to_leader -> BigInt,
+        sent_to_leader -> Integer,
     }
 }
 
@@ -35,9 +35,4 @@ table! {
 joinable!(leaders -> validators (address));
 joinable!(transactions -> bundle (bundle_id));
 
-allow_tables_to_appear_in_same_query!(
-    bundle,
-    leaders,
-    transactions,
-    validators,
-);
+allow_tables_to_appear_in_same_query!(bundle, leaders, transactions, validators,);

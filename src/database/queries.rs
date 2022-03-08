@@ -6,11 +6,11 @@ use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
-use crate::state::SharedValidatorState;
+use crate::state::ValidatorStateTrait;
 
-pub trait RequestContext {
+pub trait RequestContext: ValidatorStateTrait {
     fn get_db_connection(&self) -> SqliteConnection;
-}   
+}
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
 where
@@ -28,7 +28,7 @@ where
     diesel::insert_into(bundle::table)
         .values(&new_bundle)
         .execute(&conn)
-        .unwrap_or_else(|_| panic!("Error inserting new bundle {}", &new_bundle.id));
+        .unwrap_or_else(|_| panic!("Error inserting new bundle {}", &new_bundle.id.unwrap()));
 
     Ok(())
 }
@@ -41,7 +41,7 @@ where
     diesel::insert_into(transactions::table)
         .values(new_tx)
         .execute(&conn)
-        .unwrap_or_else(|_| panic!("Error inserting new tx {}", &new_tx.id));
+        .unwrap_or_else(|_| panic!("Error inserting new tx {}", &new_tx.id.as_ref().unwrap()));
 
     Ok(())
 }
@@ -53,8 +53,8 @@ where
     let conn = ctx.get_db_connection();
     diesel::update(transactions::table.find(&tx.id))
         .set(&*tx)
-        .get_result::<Transaction>(&conn)
-        .unwrap_or_else(|_| panic!("Unable to find transaction {}", &tx.id));
+        .execute(&conn)
+        .unwrap_or_else(|_| panic!("Unable to find transaction {}", &tx.id.as_ref().unwrap()));
 
     Ok(())
 }

@@ -48,8 +48,8 @@ pub struct TransactionData {
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct BlockInfo {
     pub id: String,
-    pub timestamp: i64,
-    pub height: i64,
+    pub timestamp: i32,
+    pub height: i32,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -115,7 +115,7 @@ pub struct Arweave {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GqlVariables {
     pub owners: Vec<String>,
-    pub first: i64,
+    pub first: i32,
     pub after: Option<String>,
 }
 
