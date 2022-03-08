@@ -16,24 +16,24 @@
 --
 -- SELECT diesel_manage_updated_at('users');
 -- ```
-CREATE OR REPLACE FUNCTION diesel_manage_updated_at(_tbl regclass) RETURNS VOID AS $$
-BEGIN
-    EXECUTE format('CREATE TRIGGER set_updated_at BEFORE UPDATE ON %s
-                    FOR EACH ROW EXECUTE PROCEDURE diesel_set_updated_at()', _tbl);
-END;
-$$ LANGUAGE plpgsql;
+-- CREATE OR REPLACE FUNCTION diesel_manage_updated_at(_tbl regclass) RETURNS VOID AS $$
+-- BEGIN
+--    EXECUTE format('CREATE TRIGGER set_updated_at BEFORE UPDATE ON %s
+--                    FOR EACH ROW EXECUTE PROCEDURE diesel_set_updated_at()', _tbl);
+-- END;
+-- $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION diesel_set_updated_at() RETURNS trigger AS $$
-BEGIN
-    IF (
-        NEW IS DISTINCT FROM OLD AND
-        NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
-    ) THEN
-        NEW.updated_at := current_timestamp;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- CREATE OR REPLACE FUNCTION diesel_set_updated_at() RETURNS trigger AS $$
+-- BEGIN
+--    IF (
+--        NEW IS DISTINCT FROM OLD AND
+--        NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
+--    ) THEN
+--        NEW.updated_at := current_timestamp;
+--    END IF;
+--    RETURN NEW;
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 CREATE TABLE IF NOT EXISTS bundle (
     id CHAR(43),
@@ -47,10 +47,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     epoch BIGINT NOT NULL,
     block_promised BIGINT NOT NULL,
     block_actual BIGINT,
-    signature bytea NOT NULL,
-    validated bool NOT NULL,
+    signature blob NOT NULL,
+    validated INTEGER NOT NULL,
     bundle_id CHAR(43) REFERENCES bundle(id),
-    sent_to_leader bool NOT NULL,
+    sent_to_leader INTEGER NOT NULL,
     PRIMARY KEY (id)
 );
 
