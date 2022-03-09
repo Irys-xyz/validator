@@ -30,7 +30,7 @@ pub struct Bundler {
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
-    block: i32,
+    block: i64,
     tx_id: String,
     signature: String,
 }
@@ -98,7 +98,7 @@ where
     Context: queries::RequestContext,
 {
     let block_ok = check_bundle_block(ctx, bundler, bundle).await;
-    let mut current_block: Option<i32> = None;
+    let mut current_block: Option<i64> = None;
     if let Err(err) = block_ok {
         return Err(err);
     }
@@ -147,7 +147,7 @@ async fn check_bundle_block<Context>(
     ctx: &Context,
     bundler: &Bundler,
     bundle: &ArweaveTx,
-) -> Result<Option<i32>, ValidatorCronError>
+) -> Result<Option<i64>, ValidatorCronError>
 where
     Context: queries::RequestContext,
 {
@@ -191,7 +191,7 @@ where
 async fn verify_bundle_tx<Context>(
     ctx: &Context,
     bundle_tx: &Item,
-    current_block: Option<i32>,
+    current_block: Option<i64>,
 ) -> Result<(), ValidatorCronError>
 where
     Context: queries::RequestContext,
@@ -222,14 +222,14 @@ where
                 insert_tx_in_db(
                     ctx,
                     &NewTransaction {
-                        id: Some(receipt.tx_id),
+                        id: receipt.tx_id,
                         epoch: 0, // TODO: implement epoch correctly
                         block_promised: receipt.block,
                         block_actual: current_block,
                         signature: receipt.signature.as_bytes().to_vec(),
-                        validated: 1,
+                        validated: true,
                         bundle_id: Some(bundle_tx.tx_id.clone()),
-                        sent_to_leader: 0,
+                        sent_to_leader: false,
                     },
                 );
             } else {

@@ -6,8 +6,8 @@ use super::{bundle::Bundler, error::TxsError};
 pub struct BundleTransaction {
     pub data_item_id: String,
     pub address: String,
-    pub current_block: i32,
-    pub expected_block: i32,
+    pub current_block: i64,
+    pub expected_block: i64,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -41,7 +41,7 @@ pub struct GraphqlQueryResponse {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GqlVariables {
-    pub limit: i32,
+    pub limit: i64,
     pub after: Option<String>,
 }
 #[derive(Deserialize, Serialize, Debug)]
@@ -53,7 +53,7 @@ pub struct ReqBody {
 
 pub async fn get_transactions(
     bundler: &Bundler,
-    limit: Option<i32>,
+    limit: Option<i64>,
     after: Option<String>,
 ) -> Result<(Vec<BundleTransaction>, bool, Option<String>), TxsError> {
     let raw_query = "query($limit: Int, $after: String) { transaction(limit: $limit, after: $after) { pageInfo { hasNextPage } edges { cursor node { data_item_id address current_block expected_block } } } }".to_string();

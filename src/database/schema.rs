@@ -2,7 +2,7 @@ table! {
     bundle (id) {
         id -> Nullable<Text>,
         owner_address -> Nullable<Text>,
-        block_height -> Integer,
+        block_height -> BigInt,
     }
 }
 
@@ -15,13 +15,13 @@ table! {
 table! {
     transactions (id) {
         id -> Nullable<Text>,
-        epoch -> Integer,
-        block_promised -> Integer,
-        block_actual -> Nullable<Integer>,
+        epoch -> BigInt,
+        block_promised -> BigInt,
+        block_actual -> Nullable<BigInt>,
         signature -> Binary,
-        validated -> Integer,
+        validated -> Bool,
         bundle_id -> Nullable<Text>,
-        sent_to_leader -> Integer,
+        sent_to_leader -> Bool,
     }
 }
 

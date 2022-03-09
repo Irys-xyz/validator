@@ -48,9 +48,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     block_promised BIGINT NOT NULL,
     block_actual BIGINT,
     signature blob NOT NULL,
-    validated INTEGER NOT NULL,
+    validated BOOLEAN NOT NULL,
     bundle_id CHAR(43) REFERENCES bundle(id),
-    sent_to_leader INTEGER NOT NULL,
+    sent_to_leader BOOLEAN NOT NULL,
     PRIMARY KEY (id)
 );
 

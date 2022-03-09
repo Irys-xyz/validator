@@ -24,7 +24,7 @@ pub struct ValidatorSignature {
 pub struct ReqBody {
     id: String,
     signature: String,
-    block: i32,
+    block: i64,
     address: String,
     validator_signatures: Vec<ValidatorSignature>,
 }
@@ -69,14 +69,14 @@ where
             let update = update_tx(
                 ctx,
                 &NewTransaction {
-                    id: tx.id,
+                    id: tx.id.unwrap().clone(),
                     epoch: tx.epoch,
                     block_promised: tx.block_promised,
                     block_actual: tx.block_actual,
                     signature: tx.signature,
                     validated: tx.validated,
                     bundle_id: tx.bundle_id,
-                    sent_to_leader: 1,
+                    sent_to_leader: true,
                 },
             )
             .await;

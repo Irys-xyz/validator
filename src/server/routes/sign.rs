@@ -103,17 +103,17 @@ where
     .await;
 
     // Add to db
-    let current_epoch = conn.get::<_, i32>("validator:epoch:current").await.unwrap();
+    let current_epoch = conn.get::<_, i64>("validator:epoch:current").await.unwrap();
 
     let new_transaction = NewTransaction {
-        id: Some(body.id),
+        id: body.id,
         epoch: current_epoch,
-        block_promised: i32::try_from(body.block).unwrap(),
+        block_promised: i64::try_from(body.block).unwrap(),
         block_actual: None,
         signature: sig.clone(),
-        validated: 0,
+        validated: false,
         bundle_id: None,
-        sent_to_leader: 0,
+        sent_to_leader: false,
     };
 
     actix_rt::task::spawn_blocking(move || {

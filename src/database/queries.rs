@@ -41,7 +41,7 @@ where
     diesel::insert_into(transactions::table)
         .values(new_tx)
         .execute(&conn)
-        .unwrap_or_else(|_| panic!("Error inserting new tx {}", &new_tx.id.as_ref().unwrap()));
+        .unwrap_or_else(|_| panic!("Error inserting new tx {}", &new_tx.id));
 
     Ok(())
 }
@@ -54,7 +54,7 @@ where
     diesel::update(transactions::table.find(&tx.id))
         .set(&*tx)
         .execute(&conn)
-        .unwrap_or_else(|_| panic!("Unable to find transaction {}", &tx.id.as_ref().unwrap()));
+        .unwrap_or_else(|_| panic!("Unable to find transaction {}", &tx.id));
 
     Ok(())
 }
@@ -76,7 +76,7 @@ where
 {
     let conn = ctx.get_db_connection();
     transactions
-        .filter(transactions::sent_to_leader.eq(0))
+        .filter(transactions::sent_to_leader.eq(false))
         .limit(25)
         .load::<Transaction>(&conn)
 }
