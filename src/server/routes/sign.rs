@@ -10,20 +10,23 @@ use bundlr_sdk::{
 };
 
 use data_encoding::BASE64URL_NOPAD;
-use diesel::RunQueryDsl;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use openssl::{
     hash::MessageDigest,
     pkey::{PKey, Private, Public},
     rsa::Padding,
     sign,
 };
-use redis::AsyncCommands;
-use reool::{PoolDefault, RedisPool};
+use paris::error;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
-    database::{models::NewTransaction, schema::transactions::dsl::*},
+    consts::{BUNDLR_AS_BUFFER, VALIDATOR_ADDRESS, VALIDATOR_AS_BUFFER},
+    database::{
+        models::{NewTransaction, Transaction},
+        schema::transactions,
+        schema::transactions::dsl::*,
+    },
     server::error::ValidatorServerError,
     state::{ValidatorState, ValidatorStateTrait},
     types::DbPool,
@@ -35,6 +38,8 @@ pub trait Config: ValidatorStateTrait {
     fn validator_address(&self) -> &str;
     fn validator_private_key(&self) -> &PKey<Private>;
     fn validator_public_key(&self) -> &PKey<Public>;
+    fn current_epoch(&self) -> i64;
+    fn current_block(&self) -> u128;
 }
 
 #[derive(Deserialize)]
@@ -55,33 +60,50 @@ struct SignedBody {
     validator_signature: String,
 }
 
-pub async fn sign_route<Config>(
-    config: Data<Config>,
+pub async fn sign_route<Context>(
+    ctx: Data<Context>,
     db: Data<DbPool>,
-    redis: Data<RedisPool>,
     body: Json<UnsignedBody>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Config: self::Config,
+    Context: self::Config,
 {
-    let s = config.get_validator_state().load(Ordering::SeqCst);
+    let s = ctx.get_validator_state().load(Ordering::SeqCst);
+
     if s != ValidatorState::Cosigner {
         return Ok(HttpResponse::BadRequest().finish());
     }
 
     let body = body.into_inner();
 
-    let mut conn = redis.check_out(PoolDefault).await.unwrap();
-
     // Verify
-    if conn.exists(&body.id).await.unwrap() {
-        return Ok(HttpResponse::Accepted().finish());
+    let exists = {
+        let conn = db.get().map_err(|err| {
+            error!("Failed to get database connection: {:?}", err);
+            ValidatorServerError::InternalError
+        })?;
+        let filter = id.eq(body.id.clone());
+        actix_rt::task::spawn_blocking(move || {
+            match transactions.filter(filter).count().get_result(&conn) {
+                Ok(0) => Ok(false),
+                Ok(_) => Ok(true),
+                Err(err) => Err(err),
+            }
+        })
     };
-    let current_block = conn.get::<_, u128>(&body.id).await.unwrap();
+
+    if let Ok(true) = exists
+        .await
+        .map_err(|_| ValidatorServerError::InternalError)?
+    {
+        return Ok(HttpResponse::Accepted().finish());
+    }
+
+    let current_block = ctx.current_block();
 
     if !body
         .validators
-        .contains(&config.validator_address().to_string())
+        .contains(&ctx.validator_address().to_string())
     {
         return Ok(HttpResponse::BadRequest().finish());
     }
@@ -90,20 +112,20 @@ where
         return Ok(HttpResponse::BadRequest().finish());
     }
 
-    if !verify_body(&config.bundler_public_key(), &body) {
+    if !verify_body(&ctx.bundler_public_key(), &body) {
         return Ok(HttpResponse::BadRequest().finish());
     };
 
     // Sign
     let sig = sign_body(
-        &config.validator_private_key(),
-        &config.bundler_address(),
+        &ctx.validator_private_key(),
+        &ctx.bundler_address(),
         body.id.as_str(),
     )
     .await;
 
     // Add to db
-    let current_epoch = conn.get::<_, i64>("validator:epoch:current").await.unwrap();
+    let current_epoch = ctx.current_epoch();
 
     let new_transaction = NewTransaction {
         id: body.id,

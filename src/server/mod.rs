@@ -13,11 +13,9 @@ use diesel::{
     sqlite::SqliteConnection,
 };
 use paris::info;
-use reool::RedisPool;
 use routes::get_tx::get_tx;
 use routes::index::index;
 use routes::post_tx::post_tx;
-use tokio::runtime::Handle;
 
 use crate::{server::routes::sign::sign_route, state::ValidatorStateTrait};
 
@@ -33,7 +31,6 @@ where
 {
     env_logger::init();
 
-    let redis_connection_string = ctx.redis_connection_url().to_string();
     let db_url = ctx.database_connection_url().to_string();
     info!("Starting up HTTP server...");
 
@@ -41,18 +38,10 @@ where
     HttpServer::new(move || {
         let conn_manager = ConnectionManager::<SqliteConnection>::new(db_url.clone());
 
-        let redis_pool = RedisPool::builder()
-            .connect_to_node(redis_connection_string.clone())
-            .desired_pool_size(5)
-            .task_executor(Handle::current())
-            .finish_redis_rs()
-            .unwrap();
-
         let postgres_pool = Pool::builder().max_size(10).build(conn_manager).unwrap();
 
         App::new()
             .app_data(Data::new(server_config.clone()))
-            .app_data(Data::new(redis_pool))
             .app_data(Data::new(postgres_pool))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
