@@ -21,12 +21,8 @@ use paris::error;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    consts::{BUNDLR_AS_BUFFER, VALIDATOR_ADDRESS, VALIDATOR_AS_BUFFER},
-    database::{
-        models::{NewTransaction, Transaction},
-        schema::transactions,
-        schema::transactions::dsl::*,
-    },
+    consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
+    database::{models::NewTransaction, schema::transactions::dsl::*},
     server::error::ValidatorServerError,
     state::{ValidatorState, ValidatorStateTrait},
     types::DbPool,
