@@ -1,7 +1,7 @@
 use std::sync::{atomic::Ordering, RwLock};
 
 use crate::{
-    database::schema::transactions::dsl::*, server::error::ValidatorServerError,
+    database::schema::transactions::dsl::*, key_manager, server::error::ValidatorServerError,
     state::ValidatorState, types::DbPool,
 };
 use actix_web::{
@@ -10,9 +10,7 @@ use actix_web::{
 };
 use bundlr_sdk::{deep_hash::DeepHashChunk, deep_hash_sync::deep_hash_sync};
 use bytes::Bytes;
-use data_encoding::BASE64URL;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
-use openssl::{hash::MessageDigest, rsa::Padding, sign::Verifier};
 use paris::error;
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +31,7 @@ pub struct PostTxBody {
 }
 
 // Receive Bundlr transaction receipt
-pub async fn post_tx<Config>(
+pub async fn post_tx<Config, KeyManager>(
     ctx: Data<Config>,
     body: Json<PostTxBody>,
     db: Data<DbPool>,
@@ -41,7 +39,8 @@ pub async fn post_tx<Config>(
     validators: Data<RwLock<Vec<String>>>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Config: super::sign::Config + 'static,
+    Config: super::sign::Config<KeyManager> + 'static,
+    KeyManager: key_manager::KeyManager + Clone + Send + 'static,
 {
     let s = ctx.get_validator_state().load(Ordering::SeqCst);
     if s != ValidatorState::Leader {
@@ -75,31 +74,14 @@ where
 
     // Check address is valid
 
-    // Get public
-    // FIXME: remove crypto operations behind a service
-    // Instead of passing public and private keys around,
-    // create service that allows signing messages and verifying
-    // signatures. This way, key management can be in one place
-    // and reference to this service can be passed more easily
-    // around to async tasks.
-    let public = ctx.bundler_public_key().clone();
+    let key_manager = ctx.key_manager().clone();
 
     let (valid, body) = actix_rt::task::spawn_blocking(move || {
         let hash = deep_hash_body(&body).unwrap();
-
-        // Check signature matches public
-        let mut verifier = Verifier::new(MessageDigest::sha256(), &public)?;
-        verifier.set_rsa_padding(Padding::PKCS1_PSS)?;
-        verifier.update(&hash)?;
-
-        // FIXME: Assumes sig is base64url
-        let sig = BASE64URL.decode(body.signature.as_bytes()).unwrap();
-
-        verifier
-            .verify(sig.as_slice())
-            .map(|verified| (verified, body))
+        let valid = key_manager.verify_validator_signature(&hash, body.signature.as_bytes());
+        (valid, body)
     })
-    .await??;
+    .await?;
 
     if !valid {
         tracing::info!("Received invalid signature");
