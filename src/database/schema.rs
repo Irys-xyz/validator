@@ -1,6 +1,6 @@
 table! {
     bundle (id) {
-        id -> Nullable<Text>,
+        id -> Text,
         owner_address -> Nullable<Text>,
         block_height -> BigInt,
     }
@@ -14,7 +14,7 @@ table! {
 
 table! {
     transactions (id) {
-        id -> Nullable<Text>,
+        id -> Text,
         epoch -> BigInt,
         block_promised -> BigInt,
         block_actual -> Nullable<BigInt>,

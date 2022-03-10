@@ -56,7 +56,7 @@ where
         let req = client
             .post(format!("{}/{}", &leader.url, "tx"))
             .json(&ReqBody {
-                id: tx.id.as_ref().unwrap().to_string(),
+                id: tx.id.to_string(),
                 signature: String::from_utf8(tx.signature.clone()).unwrap(),
                 block: tx.block_actual.unwrap(),
                 address: String::from("address"), // TODO: get this address
@@ -69,7 +69,7 @@ where
             let update = update_tx(
                 ctx,
                 &NewTransaction {
-                    id: tx.id.unwrap().clone(),
+                    id: tx.id.clone(),
                     epoch: tx.epoch,
                     block_promised: tx.block_promised,
                     block_actual: tx.block_actual,

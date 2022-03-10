@@ -202,7 +202,7 @@ where
         let tx = tx.unwrap();
         tx_receipt = Some(TxReceipt {
             block: tx.block_promised,
-            tx_id: tx.id.unwrap(),
+            tx_id: tx.id,
             signature: match std::str::from_utf8(&tx.signature.to_vec()) {
                 Ok(v) => v.to_string(),
                 Err(e) => panic!("Invalid UTF-8 seq: {}", e),

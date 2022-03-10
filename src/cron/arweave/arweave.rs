@@ -108,7 +108,7 @@ pub enum ArweaveProtocol {
 #[derive(Clone)]
 pub struct Arweave {
     pub host: String,
-    pub port: i64,
+    pub port: i16,
     pub protocol: ArweaveProtocol,
 }
 
@@ -127,7 +127,7 @@ pub struct ReqBody {
 
 #[warn(dead_code)]
 impl Arweave {
-    pub fn new(port: i64, host: String, protocol: String) -> Arweave {
+    pub fn new(port: i16, host: String, protocol: String) -> Arweave {
         Arweave {
             port,
             host,

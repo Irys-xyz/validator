@@ -5,7 +5,7 @@ use serde::Serialize;
 
 #[derive(Serialize, Queryable)]
 pub struct Bundle {
-    pub id: Option<String>,
+    pub id: String,
     pub owner_address: Option<String>,
     pub block_height: i64,
 }
@@ -20,7 +20,7 @@ pub struct NewBundle {
 
 #[derive(Serialize, Queryable)]
 pub struct Transaction {
-    pub id: Option<String>,
+    pub id: String,
     pub epoch: i64,
     pub block_promised: i64,
     pub block_actual: Option<i64>,

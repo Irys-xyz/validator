@@ -36,14 +36,14 @@
 -- $$ LANGUAGE plpgsql;
 
 CREATE TABLE IF NOT EXISTS bundle (
-    id CHAR(43),
+    id CHAR(43) NOT NULL,
     owner_address CHAR(43),
     block_height BIGINT NOT NULL,
     PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-    id CHAR(43),
+    id CHAR(43) NOT NULL,
     epoch BIGINT NOT NULL,
     block_promised BIGINT NOT NULL,
     block_actual BIGINT,
