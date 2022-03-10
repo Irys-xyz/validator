@@ -55,7 +55,7 @@ struct SignedBody {
     validator_signature: String,
 }
 
-pub async fn sign_route<'a, Config>(
+pub async fn sign_route<Config>(
     config: Data<Config>,
     db: Data<DbPool>,
     redis: Data<RedisPool>,
