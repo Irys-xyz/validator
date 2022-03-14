@@ -223,7 +223,7 @@ where
         Some(receipt) => {
             let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
             if tx_is_ok && receipt.block <= current_block.unwrap() {
-                insert_tx_in_db(
+                if let Err(_err) = insert_tx_in_db(
                     ctx,
                     &NewTransaction {
                         id: receipt.tx_id,
@@ -235,7 +235,9 @@ where
                         bundle_id: Some(bundle_tx.tx_id.clone()),
                         sent_to_leader: false,
                     },
-                );
+                ) {
+                    // FIXME: missing error handling
+                }
             } else {
                 // TODO: vote slash
             }

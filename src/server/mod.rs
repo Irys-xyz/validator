@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use actix_web::{
     middleware::Logger,
     web::{self, Data},
-    App, HttpResponse, HttpServer,
+    App, HttpServer,
 };
 use diesel::{
     r2d2::{ConnectionManager, Pool},

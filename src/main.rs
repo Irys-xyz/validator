@@ -19,12 +19,9 @@ use openssl::{
     pkey::{PKey, Private, Public},
     sha::Sha256,
 };
-use paris::info;
 use server::{run_server, RuntimeContext};
 use state::{generate_state, SharedValidatorState, ValidatorStateTrait};
 use std::{fs, net::SocketAddr};
-
-use crate::database::queries::RequestContext;
 
 #[derive(Clone, Debug, Parser)]
 struct AppConfig {

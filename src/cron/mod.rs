@@ -10,7 +10,7 @@ mod validate;
 use crate::database::queries;
 use futures::{join, Future};
 use paris::{error, info};
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use self::error::ValidatorCronError;
 
