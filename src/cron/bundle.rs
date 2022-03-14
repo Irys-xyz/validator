@@ -31,7 +31,7 @@ pub struct Bundler {
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
-    block: i64,
+    block: u128,
     tx_id: String,
     signature: String,
 }
@@ -205,7 +205,7 @@ where
     if tx.is_ok() {
         let tx = tx.unwrap();
         tx_receipt = Some(TxReceipt {
-            block: tx.block_promised,
+            block: tx.block_promised.try_into().unwrap(), // FIXME: don't use unwrap
             tx_id: tx.id,
             signature: match std::str::from_utf8(&tx.signature.to_vec()) {
                 Ok(v) => v.to_string(),
@@ -222,13 +222,14 @@ where
     match tx_receipt {
         Some(receipt) => {
             let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
-            if tx_is_ok && receipt.block <= current_block.unwrap() {
+            // FIXME: don't use unwrap
+            if tx_is_ok && receipt.block <= current_block.unwrap().try_into().unwrap() {
                 if let Err(_err) = insert_tx_in_db(
                     ctx,
                     &NewTransaction {
                         id: receipt.tx_id,
                         epoch: 0, // TODO: implement epoch correctly
-                        block_promised: receipt.block,
+                        block_promised: receipt.block.try_into().unwrap(), // FIXME: don't use unwrap
                         block_actual: current_block,
                         signature: receipt.signature.as_bytes().to_vec(),
                         validated: true,
