@@ -15,6 +15,7 @@ use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
 use jsonwebkey::JsonWebKey;
 use lazy_static::lazy_static;
+use num_traits::ToPrimitive;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Public};
 use openssl::rsa::Padding;
@@ -151,41 +152,44 @@ async fn check_bundle_block<Context>(
 where
     Context: queries::RequestContext,
 {
-    let current_block = bundle.block.as_ref().map(|b| b.height);
-
-    if current_block.is_none() {
-        info!(
-            "Bundle {} not included in any block, moving on ...",
-            &bundle.id
-        );
-        Ok(None)
-    } else {
-        let current_block = current_block.unwrap();
-        info!("Bundle {} included in block {}", &bundle.id, current_block);
-        let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
-
-        if !is_bundle_present {
-            return match insert_bundle_in_db(
-                ctx,
-                NewBundle {
-                    id: bundle.id.clone(),
-                    owner_address: bundler.address.clone(),
-                    block_height: current_block,
-                },
-            ) {
-                Ok(()) => {
-                    info!("Bundle {} successfully stored", &bundle.id);
-                    Ok(Some(current_block))
-                }
-                Err(err) => {
-                    error!("Error when storing bundle {} : {}", &bundle.id, err);
-                    Err(ValidatorCronError::BundleNotInsertedInDB)
-                }
-            };
+    let current_block = match bundle.block {
+        Some(ref block) => block
+            .height
+            .to_i64()
+            .expect("Could not convert block number from u128 to i64"),
+        None => {
+            info!(
+                "Bundle {} not included in any block, moving on ...",
+                &bundle.id
+            );
+            return Ok(None);
         }
+    };
 
-        Ok(Some(current_block))
+    info!("Bundle {} included in block {}", &bundle.id, current_block);
+    let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
+
+    if !is_bundle_present {
+        return match insert_bundle_in_db(
+            ctx,
+            NewBundle {
+                id: bundle.id.clone(),
+                owner_address: bundler.address.clone(),
+                block_height: current_block,
+            },
+        ) {
+            Ok(()) => {
+                info!("Bundle {} successfully stored", &bundle.id);
+                Ok(Some(current_block))
+            }
+            Err(err) => {
+                error!("Error when storing bundle {} : {}", &bundle.id, err);
+                Err(ValidatorCronError::BundleNotInsertedInDB)
+            }
+        };
     }
+
+    Ok(Some(current_block))
 }
 
 async fn verify_bundle_tx<Context>(

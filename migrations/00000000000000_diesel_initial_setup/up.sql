@@ -47,20 +47,24 @@ CREATE TABLE IF NOT EXISTS transactions (
     epoch BIGINT NOT NULL,
     block_promised BIGINT NOT NULL,
     block_actual BIGINT,
-    signature blob NOT NULL,
+    signature BLOB NOT NULL,
     validated BOOLEAN NOT NULL,
-    bundle_id CHAR(43) REFERENCES bundle(id),
+    bundle_id CHAR(43),
     sent_to_leader BOOLEAN NOT NULL,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    FOREIGN KEY (bundle_id) REFERENCES bundle(id)
 );
 
 CREATE TABLE IF NOT EXISTS validators (
-    address CHAR(43) PRIMARY KEY NOT NULL,
-    url VARCHAR(100)
+    address CHAR(43) NOT NULL,
+    url VARCHAR(100),
+    PRIMARY KEY(address)
 );
 
 CREATE TABLE IF NOT EXISTS leaders (
-    address CHAR(43) PRIMARY KEY REFERENCES validators(address) NOT NULL
+    address CHAR(43) NOT NULL,
+    PRIMARY KEY(address),
+    FOREIGN KEY(address) REFERENCES validator(address)
 );
 
 CREATE INDEX epoch_transactions_idx ON transactions(epoch);

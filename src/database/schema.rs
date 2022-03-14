@@ -32,7 +32,6 @@ table! {
     }
 }
 
-joinable!(leaders -> validators (address));
 joinable!(transactions -> bundle (bundle_id));
 
 allow_tables_to_appear_in_same_query!(bundle, leaders, transactions, validators,);
