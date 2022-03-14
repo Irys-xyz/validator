@@ -1,5 +1,3 @@
-use std::sync::{atomic::Ordering, Arc};
-
 use actix_web::{web::Data, HttpResponse};
 
 use crate::{

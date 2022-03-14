@@ -6,7 +6,6 @@ use tracing::error;
 use super::error::ValidatorCronError;
 use crate::database::models::NewTransaction;
 use crate::database::queries::{self, get_unposted_txs, update_tx};
-use crate::state::SharedValidatorState;
 
 #[derive(Default)]
 pub struct Validator {
@@ -24,7 +23,7 @@ pub struct ValidatorSignature {
 pub struct ReqBody {
     id: String,
     signature: String,
-    block: i64,
+    block: u128,
     address: String,
     validator_signatures: Vec<ValidatorSignature>,
 }
@@ -53,13 +52,15 @@ where
     let client = reqwest::Client::new();
 
     for tx in txs {
+        // FIXME: we should not need to unwrap at this point
+        let block_actual = tx.block_actual.unwrap();
         let req = client
             .post(format!("{}/{}", &leader.url, "tx"))
             .json(&ReqBody {
                 id: tx.id.clone(),
                 signature: String::from_utf8(tx.signature.clone()).unwrap(),
-                block: tx.block_actual.unwrap(),
-                address: String::from("address"), // TODO: get this address
+                block: u128::try_from(block_actual).unwrap(), // FIXME: don't unwrap
+                address: String::from("address"),             // TODO: get this address
                 validator_signatures: Vec::new(),
             })
             .send()
@@ -69,7 +70,7 @@ where
             let update = update_tx(
                 ctx,
                 &NewTransaction {
-                    id: tx.id,
+                    id: tx.id.clone(),
                     epoch: tx.epoch,
                     block_promised: tx.block_promised,
                     block_actual: tx.block_actual,

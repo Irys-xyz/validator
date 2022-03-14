@@ -49,7 +49,7 @@ pub struct TransactionData {
 pub struct BlockInfo {
     pub id: String,
     pub timestamp: i64,
-    pub height: i64,
+    pub height: u128,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -108,14 +108,14 @@ pub enum ArweaveProtocol {
 #[derive(Clone)]
 pub struct Arweave {
     pub host: String,
-    pub port: i32,
+    pub port: u16,
     pub protocol: ArweaveProtocol,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GqlVariables {
     pub owners: Vec<String>,
-    pub first: i64,
+    pub first: u128,
     pub after: Option<String>,
 }
 
@@ -127,7 +127,7 @@ pub struct ReqBody {
 
 #[warn(dead_code)]
 impl Arweave {
-    pub fn new(port: i32, host: String, protocol: String) -> Arweave {
+    pub fn new(port: u16, host: String, protocol: String) -> Arweave {
         Arweave {
             port,
             host,
@@ -217,7 +217,7 @@ impl Arweave {
     pub async fn get_latest_transactions(
         &self,
         owner: &str,
-        first: Option<i32>,
+        first: Option<i64>,
         after: Option<String>,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError> {
         let raw_query = "query($owners: [String!], $first: Int) { transactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } fee { winston } quantity { winston } data { size type } } } } }";

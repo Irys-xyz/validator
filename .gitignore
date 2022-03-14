@@ -4,3 +4,4 @@
 wallet.json
 /bundles/*
 !/bundles/.gitkeep
+/db/validator.db

@@ -1,9 +1,9 @@
 use diesel::{
     r2d2::{ConnectionManager, Pool},
-    PgConnection,
+    sqlite::SqliteConnection,
 };
 
-pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
 pub struct Validator {
     pub address: String,

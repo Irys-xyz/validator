@@ -6,11 +6,11 @@ use std::net::SocketAddr;
 use actix_web::{
     middleware::Logger,
     web::{self, Data},
-    App, HttpResponse, HttpServer,
+    App, HttpServer,
 };
 use diesel::{
     r2d2::{ConnectionManager, Pool},
-    PgConnection,
+    sqlite::SqliteConnection,
 };
 use paris::info;
 use reool::RedisPool;
@@ -39,7 +39,7 @@ where
 
     let server_config = ctx.clone();
     HttpServer::new(move || {
-        let conn_manager = ConnectionManager::<PgConnection>::new(db_url.clone());
+        let conn_manager = ConnectionManager::<SqliteConnection>::new(db_url.clone());
 
         let redis_pool = RedisPool::builder()
             .connect_to_node(redis_connection_string.clone())

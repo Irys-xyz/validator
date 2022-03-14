@@ -1,16 +1,15 @@
 use diesel::prelude::*;
 use diesel::result::Error;
-use diesel::{PgConnection, QueryDsl};
+use diesel::QueryDsl;
 extern crate diesel;
 use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
-use crate::state::SharedValidatorState;
+use crate::state::ValidatorStateTrait;
 
-pub trait RequestContext {
-    fn get_db_connection(&self) -> PgConnection;
-    fn get_validator_state(&self) -> &SharedValidatorState;
+pub trait RequestContext: ValidatorStateTrait {
+    fn get_db_connection(&self) -> SqliteConnection;
 }
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
@@ -54,7 +53,7 @@ where
     let conn = ctx.get_db_connection();
     diesel::update(transactions::table.find(&tx.id))
         .set(&*tx)
-        .get_result::<Transaction>(&conn)
+        .execute(&conn)
         .unwrap_or_else(|_| panic!("Unable to find transaction {}", &tx.id));
 
     Ok(())

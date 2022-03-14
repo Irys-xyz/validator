@@ -15,6 +15,7 @@ use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
 use jsonwebkey::JsonWebKey;
 use lazy_static::lazy_static;
+use num_traits::ToPrimitive;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Public};
 use openssl::rsa::Padding;
@@ -30,7 +31,7 @@ pub struct Bundler {
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
-    block: i64,
+    block: u128,
     tx_id: String,
     signature: String,
 }
@@ -151,41 +152,44 @@ async fn check_bundle_block<Context>(
 where
     Context: queries::RequestContext,
 {
-    let current_block = bundle.block.as_ref().map(|b| b.height);
-
-    if current_block.is_none() {
-        info!(
-            "Bundle {} not included in any block, moving on ...",
-            &bundle.id
-        );
-        Ok(None)
-    } else {
-        let current_block = current_block.unwrap();
-        info!("Bundle {} included in block {}", &bundle.id, current_block);
-        let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
-
-        if !is_bundle_present {
-            return match insert_bundle_in_db(
-                ctx,
-                NewBundle {
-                    id: bundle.id.clone(),
-                    owner_address: Some(bundler.address.clone()),
-                    block_height: current_block,
-                },
-            ) {
-                Ok(()) => {
-                    info!("Bundle {} successfully stored", &bundle.id);
-                    Ok(Some(current_block))
-                }
-                Err(err) => {
-                    error!("Error when storing bundle {} : {}", &bundle.id, err);
-                    Err(ValidatorCronError::BundleNotInsertedInDB)
-                }
-            };
+    let current_block = match bundle.block {
+        Some(ref block) => block
+            .height
+            .to_i64()
+            .expect("Could not convert block number from u128 to i64"),
+        None => {
+            info!(
+                "Bundle {} not included in any block, moving on ...",
+                &bundle.id
+            );
+            return Ok(None);
         }
+    };
 
-        Ok(Some(current_block))
+    info!("Bundle {} included in block {}", &bundle.id, current_block);
+    let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
+
+    if !is_bundle_present {
+        return match insert_bundle_in_db(
+            ctx,
+            NewBundle {
+                id: bundle.id.clone(),
+                owner_address: bundler.address.clone(),
+                block_height: current_block,
+            },
+        ) {
+            Ok(()) => {
+                info!("Bundle {} successfully stored", &bundle.id);
+                Ok(Some(current_block))
+            }
+            Err(err) => {
+                error!("Error when storing bundle {} : {}", &bundle.id, err);
+                Err(ValidatorCronError::BundleNotInsertedInDB)
+            }
+        };
     }
+
+    Ok(Some(current_block))
 }
 
 async fn verify_bundle_tx<Context>(
@@ -201,7 +205,7 @@ where
     if tx.is_ok() {
         let tx = tx.unwrap();
         tx_receipt = Some(TxReceipt {
-            block: tx.block_promised,
+            block: tx.block_promised.try_into().unwrap(), // FIXME: don't use unwrap
             tx_id: tx.id,
             signature: match std::str::from_utf8(&tx.signature.to_vec()) {
                 Ok(v) => v.to_string(),
@@ -218,20 +222,23 @@ where
     match tx_receipt {
         Some(receipt) => {
             let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
-            if tx_is_ok && receipt.block <= current_block.unwrap() {
-                insert_tx_in_db(
+            // FIXME: don't use unwrap
+            if tx_is_ok && receipt.block <= current_block.unwrap().try_into().unwrap() {
+                if let Err(_err) = insert_tx_in_db(
                     ctx,
                     &NewTransaction {
-                        id: receipt.tx_id.clone(),
+                        id: receipt.tx_id,
                         epoch: 0, // TODO: implement epoch correctly
-                        block_promised: receipt.block,
+                        block_promised: receipt.block.try_into().unwrap(), // FIXME: don't use unwrap
                         block_actual: current_block,
                         signature: receipt.signature.as_bytes().to_vec(),
                         validated: true,
                         bundle_id: Some(bundle_tx.tx_id.clone()),
                         sent_to_leader: false,
                     },
-                );
+                ) {
+                    // FIXME: missing error handling
+                }
             } else {
                 // TODO: vote slash
             }

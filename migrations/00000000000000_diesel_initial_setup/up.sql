@@ -16,51 +16,55 @@
 --
 -- SELECT diesel_manage_updated_at('users');
 -- ```
-CREATE OR REPLACE FUNCTION diesel_manage_updated_at(_tbl regclass) RETURNS VOID AS $$
-BEGIN
-    EXECUTE format('CREATE TRIGGER set_updated_at BEFORE UPDATE ON %s
-                    FOR EACH ROW EXECUTE PROCEDURE diesel_set_updated_at()', _tbl);
-END;
-$$ LANGUAGE plpgsql;
+-- CREATE OR REPLACE FUNCTION diesel_manage_updated_at(_tbl regclass) RETURNS VOID AS $$
+-- BEGIN
+--    EXECUTE format('CREATE TRIGGER set_updated_at BEFORE UPDATE ON %s
+--                    FOR EACH ROW EXECUTE PROCEDURE diesel_set_updated_at()', _tbl);
+-- END;
+-- $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION diesel_set_updated_at() RETURNS trigger AS $$
-BEGIN
-    IF (
-        NEW IS DISTINCT FROM OLD AND
-        NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
-    ) THEN
-        NEW.updated_at := current_timestamp;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- CREATE OR REPLACE FUNCTION diesel_set_updated_at() RETURNS trigger AS $$
+-- BEGIN
+--    IF (
+--        NEW IS DISTINCT FROM OLD AND
+--        NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
+--    ) THEN
+--        NEW.updated_at := current_timestamp;
+--    END IF;
+--    RETURN NEW;
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 CREATE TABLE IF NOT EXISTS bundle (
-    id CHAR(43),
-    owner_address CHAR(43),
+    id CHAR(43) NOT NULL,
+    owner_address CHAR(43) NOT NULL,
     block_height BIGINT NOT NULL,
     PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-    id CHAR(43),
+    id CHAR(43) NOT NULL,
     epoch BIGINT NOT NULL,
     block_promised BIGINT NOT NULL,
     block_actual BIGINT,
-    signature bytea NOT NULL,
-    validated bool NOT NULL,
-    bundle_id CHAR(43) REFERENCES bundle(id),
-    sent_to_leader bool NOT NULL,
-    PRIMARY KEY (id)
+    signature BLOB NOT NULL,
+    validated BOOLEAN NOT NULL,
+    bundle_id CHAR(43),
+    sent_to_leader BOOLEAN NOT NULL,
+    PRIMARY KEY (id),
+    FOREIGN KEY (bundle_id) REFERENCES bundle(id)
 );
 
 CREATE TABLE IF NOT EXISTS validators (
-    address CHAR(43) PRIMARY KEY,
-    url VARCHAR(100)
+    address CHAR(43) NOT NULL,
+    url VARCHAR(100),
+    PRIMARY KEY(address)
 );
 
 CREATE TABLE IF NOT EXISTS leaders (
-    address CHAR(43) PRIMARY KEY REFERENCES validators(address)
+    address CHAR(43) NOT NULL,
+    PRIMARY KEY(address),
+    FOREIGN KEY(address) REFERENCES validator(address)
 );
 
 CREATE INDEX epoch_transactions_idx ON transactions(epoch);

@@ -1,5 +1,5 @@
 use crate::database::queries;
-use crate::state::{SharedValidatorState, ValidatorState};
+use crate::state::ValidatorState;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 

@@ -22,7 +22,7 @@ use reool::{PoolDefault, RedisPool};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    consts::{BUNDLR_AS_BUFFER, VALIDATOR_ADDRESS, VALIDATOR_AS_BUFFER},
+    consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
     database::{models::NewTransaction, schema::transactions::dsl::*},
     server::error::ValidatorServerError,
     state::{ValidatorState, ValidatorStateTrait},
@@ -108,7 +108,7 @@ where
     let new_transaction = NewTransaction {
         id: body.id,
         epoch: current_epoch,
-        block_promised: i64::try_from(body.block).unwrap(),
+        block_promised: i64::try_from(body.block).unwrap(), // FIXME: don't unwrap
         block_actual: None,
         signature: sig.clone(),
         validated: false,

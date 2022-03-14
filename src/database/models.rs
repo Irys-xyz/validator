@@ -6,7 +6,7 @@ use serde::Serialize;
 #[derive(Serialize, Queryable)]
 pub struct Bundle {
     pub id: String,
-    pub owner_address: Option<String>,
+    pub owner_address: String,
     pub block_height: i64,
 }
 
@@ -14,7 +14,7 @@ pub struct Bundle {
 #[table_name = "bundle"]
 pub struct NewBundle {
     pub id: String,
-    pub owner_address: Option<String>,
+    pub owner_address: String,
     pub block_height: i64,
 }
 
