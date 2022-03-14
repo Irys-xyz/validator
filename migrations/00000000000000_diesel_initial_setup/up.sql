@@ -37,7 +37,7 @@
 
 CREATE TABLE IF NOT EXISTS bundle (
     id CHAR(43) NOT NULL,
-    owner_address CHAR(43),
+    owner_address CHAR(43) NOT NULL,
     block_height BIGINT NOT NULL,
     PRIMARY KEY (id)
 );
@@ -55,12 +55,12 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 CREATE TABLE IF NOT EXISTS validators (
-    address CHAR(43) PRIMARY KEY,
+    address CHAR(43) PRIMARY KEY NOT NULL,
     url VARCHAR(100)
 );
 
 CREATE TABLE IF NOT EXISTS leaders (
-    address CHAR(43) PRIMARY KEY REFERENCES validators(address)
+    address CHAR(43) PRIMARY KEY REFERENCES validators(address) NOT NULL
 );
 
 CREATE INDEX epoch_transactions_idx ON transactions(epoch);

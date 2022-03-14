@@ -168,8 +168,8 @@ where
             return match insert_bundle_in_db(
                 ctx,
                 NewBundle {
-                    id: Some(bundle.id.clone()),
-                    owner_address: Some(bundler.address.clone()),
+                    id: bundle.id.clone(),
+                    owner_address: bundler.address.clone(),
                     block_height: current_block,
                 },
             ) {

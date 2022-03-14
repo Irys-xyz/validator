@@ -1,14 +1,14 @@
 table! {
     bundle (id) {
         id -> Text,
-        owner_address -> Nullable<Text>,
+        owner_address -> Text,
         block_height -> BigInt,
     }
 }
 
 table! {
     leaders (address) {
-        address -> Nullable<Text>,
+        address -> Text,
     }
 }
 
@@ -27,7 +27,7 @@ table! {
 
 table! {
     validators (address) {
-        address -> Nullable<Text>,
+        address -> Text,
         url -> Nullable<Text>,
     }
 }

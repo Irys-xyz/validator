@@ -6,15 +6,15 @@ use serde::Serialize;
 #[derive(Serialize, Queryable)]
 pub struct Bundle {
     pub id: String,
-    pub owner_address: Option<String>,
+    pub owner_address: String,
     pub block_height: i64,
 }
 
 #[derive(Insertable, Clone)]
 #[table_name = "bundle"]
 pub struct NewBundle {
-    pub id: Option<String>,
-    pub owner_address: Option<String>,
+    pub id: String,
+    pub owner_address: String,
     pub block_height: i64,
 }
 
