@@ -54,3 +54,9 @@ name = "wallet-tool"
 path = "src/wallet_tool.rs"
 test = false
 bench = false
+
+[[bin]]
+name = "message-builder"
+path = "src/message_builder.rs"
+test = false
+bench = false
