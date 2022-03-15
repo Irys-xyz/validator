@@ -143,8 +143,15 @@ where
         return Ok(HttpResponse::BadRequest().finish());
     }
 
-    if body.block < (current_block - 5) || body.block > (current_block + 5) {
-        return Ok(HttpResponse::BadRequest().finish());
+    // Check that the body.block is not too far in the past nor too far in the future
+    match body.block.cmp(&current_block) {
+        std::cmp::Ordering::Less if current_block - body.block > 5 => {
+            return Ok(HttpResponse::BadRequest().finish())
+        }
+        std::cmp::Ordering::Greater if body.block - current_block > 5 => {
+            return Ok(HttpResponse::BadRequest().finish())
+        }
+        _ => (),
     }
 
     match body.verify(key_manager).await {
@@ -212,18 +219,22 @@ mod tests {
         validators: Vec<String>,
     ) -> UnsignedBody {
         let tx_id = "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk";
-        let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
-            DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
-            DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-            DeepHashChunk::Chunk(tx_id.into()),
-            DeepHashChunk::Chunk(format!("{}", block).into()),
-        ]))
-        .unwrap();
+        let signature_data = {
+            let block = block.to_string().as_bytes().to_vec();
+            let tx_id = tx_id.as_bytes().to_vec();
+            deep_hash_sync(DeepHashChunk::Chunks(vec![
+                DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
+                DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
+                DeepHashChunk::Chunk(tx_id.into()),
+                DeepHashChunk::Chunk(block.into()),
+            ]))
+            .unwrap()
+        };
 
         let (buf, len) = {
             let mut signer = sign::Signer::new(MessageDigest::sha256(), &signing_key).unwrap();
             signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
-            signer.update(&message).unwrap();
+            signer.update(&signature_data).unwrap();
             let mut buf = vec![0; 512];
             let len = signer.sign(&mut buf).unwrap();
             (buf, len)
