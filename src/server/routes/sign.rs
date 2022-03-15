@@ -195,6 +195,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use actix_web::{
+        http::{self, header::ContentType},
+        test,
+    };
     use bundlr_sdk::{
         deep_hash::{DeepHashChunk, ONE_AS_BUFFER},
         deep_hash_sync::deep_hash_sync,
@@ -210,6 +214,7 @@ mod tests {
     use crate::{
         consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
         key_manager::{test_utils::test_keys, KeyManager},
+        server::routes::sign::sign_route,
     };
 
     use super::UnsignedBody;

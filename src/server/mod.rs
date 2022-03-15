@@ -19,6 +19,9 @@ use routes::post_tx::post_tx;
 
 use crate::{key_manager, server::routes::sign::sign_route, state::ValidatorStateAccess};
 
+#[cfg(feature = "test-routes")]
+use crate::server::routes::test::set_state;
+
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
@@ -39,10 +42,10 @@ where
 
     info!("Starting up HTTP server...");
 
-    let server_config = ctx.clone();
+    let runtime_context = ctx.clone();
     HttpServer::new(move || {
-        App::new()
-            .app_data(Data::new(server_config.clone()))
+        let app = App::new()
+            .app_data(Data::new(runtime_context.clone()))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
             .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
@@ -53,10 +56,46 @@ where
             .service(
                 web::scope("/leader").route("/tx", web::post().to(post_tx::<Context, KeyManager>)),
             )
-            .service(web::scope("/idle").route("/", web::get().to(index)))
+            .service(web::scope("/idle").route("/", web::get().to(index)));
+
+        #[cfg(feature = "test-routes")]
+        let app =
+            app.service(web::scope("/test").route("/state", web::post().to(set_state::<Context>)));
+
+        app
     })
     .shutdown_timeout(5)
     .bind(ctx.bind_address())?
     .run()
     .await
+}
+
+#[cfg(test)]
+pub mod test_utils {
+    use actix_web::{
+        web::{self, Data},
+        App,
+    };
+
+    use crate::{key_manager, state::ValidatorStateAccess};
+
+    use super::{
+        routes::{
+            self, get_tx::get_tx, index::index, post_tx::post_tx, sign::sign_route, test::set_state,
+        },
+        RuntimeContext,
+    };
+
+    fn create_test_app<Context, KeyManager, T>(runtime_context: Context) -> App<T>
+    where
+        Context: RuntimeContext
+            + routes::sign::Config<KeyManager>
+            + ValidatorStateAccess
+            + Clone
+            + Send
+            + 'static,
+        KeyManager: key_manager::KeyManager + Clone + Send + 'static,
+    {
+        todo!()
+    }
 }

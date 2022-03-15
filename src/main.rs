@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate diesel;
+#[macro_use]
+extern crate diesel_migrations;
 
 mod bundle;
 mod consts;
@@ -69,7 +71,7 @@ struct AppConfig {
 }
 
 #[derive(Clone)]
-struct AppContext {
+pub struct AppContext {
     key_manager: Arc<InMemoryKeyManager>,
     db_conn_pool: r2d2::Pool<ConnectionManager<SqliteConnection>>,
     redis_connection_url: String,
@@ -194,4 +196,39 @@ async fn main() -> () {
         paris::info!("Running with server");
         run_server(ctx.clone()).await.unwrap()
     };
+}
+
+#[cfg(test)]
+pub mod test_utils {
+    use std::sync::Arc;
+
+    use crate::{key_manager::InMemoryKeyManager, state::generate_state, AppContext};
+    use diesel::{
+        r2d2::{self, ConnectionManager},
+        SqliteConnection,
+    };
+
+    embed_migrations!();
+
+    pub fn test_context(key_manager: InMemoryKeyManager) -> AppContext {
+        let connection_mgr = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let db_conn_pool = r2d2::Pool::builder()
+            .build(connection_mgr)
+            .expect("Failed to create SQLite connection pool.");
+
+        {
+            let conn = db_conn_pool.get().unwrap();
+            embedded_migrations::run(&conn);
+        }
+
+        let state = generate_state();
+
+        AppContext {
+            key_manager: Arc::new(key_manager),
+            db_conn_pool,
+            redis_connection_url: "".to_string(),
+            listen: "127.0.0.1:10000".parse().unwrap(),
+            validator_state: state,
+        }
+    }
 }
