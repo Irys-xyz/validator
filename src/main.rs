@@ -5,23 +5,20 @@ mod bundle;
 mod consts;
 mod cron;
 mod database;
+mod key_manager;
 mod server;
 mod state;
 mod types;
 
 use clap::Parser;
 use cron::run_crons;
-use data_encoding::BASE64URL_NOPAD;
 use database::queries;
 use diesel::{sqlite::SqliteConnection, Connection};
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
-use openssl::{
-    pkey::{PKey, Private, Public},
-    sha::Sha256,
-};
+use key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager};
 use server::{run_server, RuntimeContext};
 use state::{generate_state, SharedValidatorState, ValidatorStateTrait};
-use std::{fs, net::SocketAddr};
+use std::{fs, net::SocketAddr, sync::Arc};
 
 #[derive(Clone, Debug, Parser)]
 struct AppConfig {
@@ -70,15 +67,21 @@ struct AppConfig {
 
 #[derive(Clone)]
 struct AppContext {
-    bundler_key: PKey<Public>,
-    validator_private_key: PKey<Private>,
-    validator_public_key: PKey<Public>,
-    bundler_address: String,
-    validator_address: String,
+    key_manager: Arc<InMemoryKeyManager>,
     database_url: String,
     redis_connection_url: String,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
+}
+
+impl InMemoryKeyManagerConfig for (JsonWebKey, JsonWebKey) {
+    fn bundler_jwk(&self) -> &JsonWebKey {
+        &self.0
+    }
+
+    fn validator_jwk(&self) -> &JsonWebKey {
+        &self.1
+    }
 }
 
 impl AppContext {
@@ -102,47 +105,11 @@ impl AppContext {
             file.parse().unwrap()
         };
 
-        let (bundler_public, bundler_address) = {
-            let jwk = bundler_jwk;
-            let der = if jwk.key.is_private() {
-                let pub_key = jwk.key.to_public().unwrap();
-                pub_key.try_to_der().unwrap()
-            } else {
-                jwk.key.try_to_der().unwrap()
-            };
-            let pub_key = PKey::public_key_from_der(der.as_slice()).unwrap();
-            let mut hasher = Sha256::new();
-            hasher.update(&pub_key.rsa().unwrap().n().to_vec());
-            let hash = hasher.finish();
-            let address = BASE64URL_NOPAD.encode(&hash);
-            (pub_key, address)
-        };
-        let (validator_private, validator_public, validator_address) = {
-            let jwk = validator_jwk;
-            let priv_key = {
-                let der = jwk.key.try_to_der().unwrap();
-                PKey::private_key_from_der(der.as_slice()).unwrap()
-            };
-            let pub_key = {
-                let pub_key_part = jwk.key.to_public().unwrap();
-                let der = pub_key_part.try_to_der().unwrap();
-                PKey::public_key_from_der(der.as_slice()).unwrap()
-            };
-            let mut hasher = Sha256::new();
-            hasher.update(&pub_key.rsa().unwrap().n().to_vec());
-            let hash = hasher.finish();
-            let address = BASE64URL_NOPAD.encode(&hash);
-            (priv_key, pub_key, address)
-        };
-
+        let key_manager = InMemoryKeyManager::new(&(bundler_jwk, validator_jwk));
         let state = generate_state();
 
         Self {
-            bundler_key: bundler_public,
-            validator_private_key: validator_private,
-            validator_public_key: validator_public,
-            bundler_address,
-            validator_address,
+            key_manager: Arc::new(key_manager),
             database_url: config.database_url.clone(),
             redis_connection_url: config.redis_connection_url.clone(),
             listen: config.listen,
@@ -173,25 +140,13 @@ impl RuntimeContext for AppContext {
     }
 }
 
-impl server::routes::sign::Config for AppContext {
+impl server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppContext {
     fn bundler_address(&self) -> &str {
-        &self.bundler_address
-    }
-
-    fn bundler_public_key(&self) -> &openssl::pkey::PKey<openssl::pkey::Public> {
-        &self.bundler_key
+        self.key_manager.bundler_address()
     }
 
     fn validator_address(&self) -> &str {
-        &self.validator_address
-    }
-
-    fn validator_private_key(&self) -> &openssl::pkey::PKey<openssl::pkey::Private> {
-        &self.validator_private_key
-    }
-
-    fn validator_public_key(&self) -> &openssl::pkey::PKey<Public> {
-        &self.validator_public_key
+        self.key_manager.validator_address()
     }
 
     fn current_epoch(&self) -> i64 {
@@ -200,6 +155,10 @@ impl server::routes::sign::Config for AppContext {
 
     fn current_block(&self) -> u128 {
         0
+    }
+
+    fn key_manager(&self) -> &Arc<InMemoryKeyManager> {
+        &self.key_manager
     }
 }
 

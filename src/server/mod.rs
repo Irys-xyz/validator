@@ -17,7 +17,7 @@ use routes::get_tx::get_tx;
 use routes::index::index;
 use routes::post_tx::post_tx;
 
-use crate::{server::routes::sign::sign_route, state::ValidatorStateTrait};
+use crate::{key_manager, server::routes::sign::sign_route, state::ValidatorStateTrait};
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
@@ -25,9 +25,15 @@ pub trait RuntimeContext {
     fn redis_connection_url(&self) -> &str;
 }
 
-pub async fn run_server<Context>(ctx: Context) -> std::io::Result<()>
+pub async fn run_server<Context, KeyManager>(ctx: Context) -> std::io::Result<()>
 where
-    Context: RuntimeContext + routes::sign::Config + ValidatorStateTrait + Clone + Send + 'static,
+    Context: RuntimeContext
+        + routes::sign::Config<KeyManager>
+        + ValidatorStateTrait
+        + Clone
+        + Send
+        + 'static,
+    KeyManager: key_manager::KeyManager + Clone + Send + 'static,
 {
     env_logger::init();
 
@@ -46,8 +52,13 @@ where
             .wrap(Logger::default())
             .route("/", web::get().to(index))
             .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
-            .service(web::scope("/cosigner").route("/sign", web::post().to(sign_route::<Context>)))
-            .service(web::scope("/leader").route("/tx", web::post().to(post_tx::<Context>)))
+            .service(
+                web::scope("/cosigner")
+                    .route("/sign", web::post().to(sign_route::<Context, KeyManager>)),
+            )
+            .service(
+                web::scope("/leader").route("/tx", web::post().to(post_tx::<Context, KeyManager>)),
+            )
             .service(web::scope("/idle").route("/", web::get().to(index)))
     })
     .shutdown_timeout(5)

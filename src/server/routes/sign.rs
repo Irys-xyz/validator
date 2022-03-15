@@ -4,36 +4,29 @@ use actix_web::{
     web::{Data, Json},
     HttpResponse,
 };
-use bundlr_sdk::{
-    deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER},
-    deep_hash_sync::deep_hash_sync,
-};
+use bundlr_sdk::deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER};
 
 use data_encoding::BASE64URL_NOPAD;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
-use openssl::{
-    hash::MessageDigest,
-    pkey::{PKey, Private, Public},
-    rsa::Padding,
-    sign,
-};
 use paris::error;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
     database::{models::NewTransaction, schema::transactions::dsl::*},
+    key_manager,
     server::error::ValidatorServerError,
     state::{ValidatorState, ValidatorStateTrait},
     types::DbPool,
 };
 
-pub trait Config: ValidatorStateTrait {
+pub trait Config<KeyManager>: ValidatorStateTrait
+where
+    KeyManager: key_manager::KeyManager,
+{
     fn bundler_address(&self) -> &str;
-    fn bundler_public_key(&self) -> &PKey<Public>;
     fn validator_address(&self) -> &str;
-    fn validator_private_key(&self) -> &PKey<Private>;
-    fn validator_public_key(&self) -> &PKey<Public>;
+    fn key_manager(&self) -> &KeyManager;
     fn current_epoch(&self) -> i64;
     fn current_block(&self) -> u128;
 }
@@ -46,6 +39,59 @@ pub struct UnsignedBody {
     validators: Vec<String>,
 }
 
+impl UnsignedBody {
+    // FIXME: needs proper error type
+    pub async fn verify<KeyManager>(&self, key_manager: &KeyManager) -> Result<bool, ()>
+    where
+        KeyManager: key_manager::KeyManager,
+    {
+        let block = self.block.to_string().as_bytes().to_vec();
+        let tx_id = self.id.as_bytes().to_vec();
+
+        let signature_data = deep_hash(DeepHashChunk::Chunks(vec![
+            DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(tx_id.into()),
+            DeepHashChunk::Chunk(block.into()),
+        ]))
+        .await
+        .map_err(|err| {
+            error!("Failed to build data for signing: {:?}", err);
+        })?;
+
+        let decoded_signature =
+            BASE64URL_NOPAD
+                .decode(self.signature.as_bytes())
+                .map_err(|err| {
+                    error!("Failed to decode signature: {:?}", err);
+                })?;
+
+        Ok(key_manager.verify_bundler_signature(&signature_data, &decoded_signature))
+    }
+
+    // FIXME: needs proper error type
+    pub async fn sign<KeyManager>(&self, key_manager: &KeyManager) -> Result<String, ()>
+    where
+        KeyManager: key_manager::KeyManager,
+    {
+        let tx_id = self.id.as_bytes().to_vec();
+        let bundler_address = key_manager.bundler_address().to_string();
+
+        let signature_data = deep_hash(DeepHashChunk::Chunks(vec![
+            DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(tx_id.into()),
+            DeepHashChunk::Chunk(bundler_address.into()),
+        ]))
+        .await
+        .map_err(|err| {
+            error!("Failed to build data for signing: {:?}", err);
+        })?;
+
+        Ok(BASE64URL_NOPAD.encode(&key_manager.validator_sign(&signature_data)))
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SignedBody {
@@ -56,13 +102,14 @@ struct SignedBody {
     validator_signature: String,
 }
 
-pub async fn sign_route<Context>(
+pub async fn sign_route<Context, KeyManager>(
     ctx: Data<Context>,
     db: Data<DbPool>,
     body: Json<UnsignedBody>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Context: self::Config,
+    Context: self::Config<KeyManager>,
+    KeyManager: key_manager::KeyManager,
 {
     let s = ctx.get_validator_state().load(Ordering::SeqCst);
 
@@ -96,6 +143,7 @@ where
     }
 
     let current_block = ctx.current_block();
+    let key_manager = ctx.key_manager();
 
     if !body
         .validators
@@ -108,17 +156,17 @@ where
         return Ok(HttpResponse::BadRequest().finish());
     }
 
-    if !verify_body(&ctx.bundler_public_key(), &body) {
-        return Ok(HttpResponse::BadRequest().finish());
+    match body.verify(key_manager).await {
+        Ok(true) => (),
+        Ok(false) => return Ok(HttpResponse::BadRequest().finish()),
+        Err(()) => return Err(ValidatorServerError::InternalError),
     };
 
     // Sign
-    let sig = sign_body(
-        &ctx.validator_private_key(),
-        &ctx.bundler_address(),
-        body.id.as_str(),
-    )
-    .await;
+    let sig = match body.sign(key_manager).await {
+        Ok(sig) => sig,
+        Err(()) => return Err(ValidatorServerError::InternalError),
+    };
 
     // Add to db
     let current_epoch = ctx.current_epoch();
@@ -128,7 +176,7 @@ where
         epoch: current_epoch,
         block_promised: i64::try_from(body.block).unwrap(), // FIXME: don't unwrap
         block_actual: None,
-        signature: sig.clone(),
+        signature: sig.as_bytes().to_vec(),
         validated: false,
         bundle_id: None,
         sent_to_leader: false,
@@ -144,151 +192,35 @@ where
 
     Ok(HttpResponse::Ok()
         .insert_header(("Content-Type", "application/octet-stream"))
-        .body(sig))
-}
-
-fn verify_body(bundler_key: &PKey<Public>, body: &UnsignedBody) -> bool {
-    let block = body.block.to_string().as_bytes().to_vec();
-    let tx_id = body.id.as_bytes().to_vec();
-
-    let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
-        DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
-        DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-        DeepHashChunk::Chunk(tx_id.into()),
-        DeepHashChunk::Chunk(block.into()),
-    ]))
-    .unwrap();
-
-    let sig = BASE64URL_NOPAD.decode(body.signature.as_bytes()).unwrap();
-
-    let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &bundler_key).unwrap();
-    verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
-    verifier.update(&message).unwrap();
-    // TODO: we shouldn't probably hide errors here, at least we should log them
-    verifier.verify(&sig).unwrap_or(false)
-}
-
-async fn sign_body(validator_key: &PKey<Private>, bundler_address: &str, tx_id: &str) -> Vec<u8> {
-    let tx_id = tx_id.as_bytes().to_vec();
-
-    let message = deep_hash(DeepHashChunk::Chunks(vec![
-        DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
-        DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-        DeepHashChunk::Chunk(tx_id.into()),
-        DeepHashChunk::Chunk(bundler_address.to_string().into()),
-    ]))
-    .await
-    .unwrap();
-
-    let mut signer = sign::Signer::new(MessageDigest::sha256(), &validator_key).unwrap();
-    signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
-    signer.update(&message).unwrap();
-    let mut sig = vec![0; 512];
-    let len = signer.sign(&mut sig).unwrap();
-
-    sig.truncate(len);
-
-    sig
+        .body(sig.as_bytes().to_vec()))
 }
 
 #[cfg(test)]
 mod tests {
-    use bundlr_sdk::deep_hash::{DeepHashChunk, ONE_AS_BUFFER};
-    use bundlr_sdk::deep_hash_sync::deep_hash_sync;
+    use bundlr_sdk::{
+        deep_hash::{DeepHashChunk, ONE_AS_BUFFER},
+        deep_hash_sync::deep_hash_sync,
+    };
     use data_encoding::BASE64URL_NOPAD;
-    use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPrivate, RsaPublic};
-    use openssl::hash::MessageDigest;
-    use openssl::pkey::{PKey, Private, Public};
-    use openssl::rsa::{Padding, Rsa};
-    use openssl::sha::Sha256;
-    use openssl::sign::{self, Signer, Verifier};
+    use openssl::{
+        hash::MessageDigest,
+        pkey::{PKey, Private},
+        rsa::Padding,
+        sign,
+    };
 
-    use crate::consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER};
+    use crate::{
+        consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
+        key_manager::{test_utils::test_keys, KeyManager},
+    };
 
     use super::UnsignedBody;
-    use super::{sign_body, verify_body};
-
-    fn bundler_key() -> (JsonWebKey, PKey<Private>) {
-        let rsa = Rsa::generate(2048).unwrap();
-        let n = rsa.n().to_vec().into();
-
-        let pkey = PKey::from_rsa(rsa).unwrap();
-        let private_der = pkey.private_key_to_der().unwrap();
-
-        (
-            JsonWebKey::new(Key::RSA {
-                public: RsaPublic {
-                    e: PublicExponent,
-                    n,
-                },
-                private: None,
-            }),
-            PKey::private_key_from_der(&private_der.as_slice()).unwrap(),
-        )
-    }
-
-    fn validator_key() -> JsonWebKey {
-        let rsa = Rsa::generate(2048).unwrap();
-
-        JsonWebKey::new(Key::RSA {
-            public: RsaPublic {
-                e: PublicExponent,
-                n: rsa.n().to_vec().into(),
-            },
-            private: Some(RsaPrivate {
-                d: rsa.d().to_vec().into(),
-                p: rsa.p().map(|v| v.to_vec().into()),
-                q: rsa.q().map(|v| v.to_vec().into()),
-                dp: rsa.dmp1().map(|v| v.to_vec().into()),
-                dq: rsa.dmq1().map(|v| v.to_vec().into()),
-                qi: rsa.iqmp().map(|v| v.to_vec().into()),
-            }),
-        })
-    }
-
-    fn to_private_key(key: &JsonWebKey) -> Result<PKey<Private>, ()> {
-        let der: Vec<u8> = key.key.try_to_der().map_err(|err| {
-            eprintln!("Failed to extract der: {:?}", err);
-            ()
-        })?;
-        PKey::private_key_from_der(der.as_slice()).map_err(|err| {
-            eprintln!("Failed to extract public key from der: {:?}", err);
-            ()
-        })
-    }
-
-    fn to_public_key(jwk: &JsonWebKey) -> Result<PKey<Public>, ()> {
-        let der = if jwk.key.is_private() {
-            let pub_key = jwk.key.to_public().ok_or_else(|| {
-                eprintln!("Key has no public part");
-            })?;
-            pub_key.try_to_der().map_err(|err| {
-                eprintln!("Failed to extract der: {:?}", err);
-                ()
-            })?
-        } else {
-            jwk.key.try_to_der().map_err(|err| {
-                eprintln!("Failed to extract der: {:?}", err);
-                ()
-            })?
-        };
-        PKey::public_key_from_der(der.as_slice()).map_err(|err| {
-            eprintln!("Failed to extract public key from der: {:?}", err);
-            ()
-        })
-    }
-
-    fn to_address(key: &JsonWebKey) -> Result<String, ()> {
-        let pub_key: PKey<Public> = to_public_key(key)?;
-        let mut hasher = Sha256::new();
-        hasher.update(&pub_key.rsa().unwrap().n().to_vec());
-        let hash = hasher.finish();
-        Ok(BASE64URL_NOPAD.encode(&hash))
-    }
-
-    fn test_message(signing_key: &PKey<Private>) -> UnsignedBody {
+    fn test_message(
+        signing_key: &PKey<Private>,
+        block: u128,
+        validators: Vec<String>,
+    ) -> UnsignedBody {
         let tx_id = "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk";
-        let block = 500;
         let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
             DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
             DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
@@ -312,117 +244,49 @@ mod tests {
             id: tx_id.to_string(),
             signature: sig,
             block,
-            validators: vec![],
+            validators,
         }
     }
 
-    #[test]
-    fn get_public_key_from_public_key_only_jwk() {
-        let (jwk, _) = bundler_key();
+    #[actix_rt::test]
+    async fn verify_unsigned_body() {
+        let (key_manager, bundler_private_key) = test_keys();
 
-        let pub_key = to_public_key(&jwk);
-        assert!(pub_key.is_ok());
-    }
+        let msg = test_message(
+            &bundler_private_key,
+            500,
+            vec![key_manager.validator_address().to_string()],
+        );
 
-    #[test]
-    fn get_public_key_from_private_key_containing_jwk() {
-        let jwk = validator_key();
-
-        let pub_key = to_public_key(&jwk);
-        assert!(pub_key.is_ok());
-    }
-
-    #[test]
-    fn get_private_key_from_private_key_containing_jwk() {
-        let jwk = validator_key();
-
-        let key = to_private_key(&jwk);
-        assert!(key.is_ok());
-    }
-
-    #[test]
-    fn get_private_key_fails_for_public_key_only_jwk() {
-        let (jwk, _) = bundler_key();
-
-        let key = to_private_key(&jwk);
-        assert!(key.is_err());
-    }
-
-    #[test]
-    fn test_verify_body() {
-        let (bundler_key, signing_key) = bundler_key();
-        let body = test_message(&signing_key);
-        let key = to_public_key(&bundler_key).unwrap();
-        assert!(verify_body(&key, &body));
-    }
-
-    #[test]
-    fn test_signing_with_bundler_key() {
-        let (jwk, signing_key) = bundler_key();
-
-        let data = b"hello, world!";
-
-        // Sign the data
-        let mut signer = Signer::new(MessageDigest::sha256(), &signing_key).unwrap();
-        signer.update(data).unwrap();
-        let signature = signer.sign_to_vec().unwrap();
-
-        // Verify the data
-        let pub_key = to_public_key(&jwk).unwrap();
-        let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap();
-        verifier.update(data).unwrap();
-        assert!(verifier.verify(&signature).unwrap());
-    }
-
-    #[test]
-    fn test_signing_with_validator_key() {
-        let jwk = validator_key();
-
-        let data = b"hello, world!";
-
-        // Sign the data
-        let priv_key = to_private_key(&jwk).unwrap();
-        let mut signer = Signer::new(MessageDigest::sha256(), &priv_key).unwrap();
-        signer.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
-        signer.update(data).unwrap();
-        let signature = signer.sign_to_vec().unwrap();
-
-        // Verify the data
-        let pub_key = to_public_key(&jwk).unwrap();
-        let mut verifier = Verifier::new(MessageDigest::sha256(), &pub_key).unwrap();
-        verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
-        verifier.update(data).unwrap();
-        assert!(verifier.verify(&signature).unwrap());
+        assert!(msg.verify(&key_manager).await.unwrap())
     }
 
     #[actix_rt::test]
-    async fn test_sign_body() {
-        let (bundler_jwk, bundler_signing_key) = bundler_key();
-        let validator_jwk = validator_key();
-        let body = test_message(&bundler_signing_key);
+    async fn sign_unsigned_body() {
+        // TODO: use pre-generated keys
+        // instead of using random keys, use pre-generated ones so that
+        // the signature can be verified against expected value
 
-        let sig = sign_body(
-            &to_private_key(&validator_jwk).unwrap(),
-            &to_address(&bundler_jwk).unwrap(),
-            &body.id,
-        )
-        .await;
+        let (key_manager, bundler_private_key) = test_keys();
 
-        let tx_id = body.id.as_bytes().to_vec();
-        let bundler_address = to_address(&bundler_jwk).unwrap();
-        let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
+        let msg = test_message(
+            &bundler_private_key,
+            500,
+            vec![key_manager.validator_address().to_string()],
+        );
+
+        let sig = msg.sign(&key_manager).await.unwrap();
+
+        let bundler_address = key_manager.bundler_address().to_string();
+        let signature_data = deep_hash_sync(DeepHashChunk::Chunks(vec![
             DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
             DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-            DeepHashChunk::Chunk(tx_id.into()),
+            DeepHashChunk::Chunk(msg.id.into()),
             DeepHashChunk::Chunk(bundler_address.into()),
         ]))
         .unwrap();
 
-        let validator_key = to_public_key(&validator_jwk).unwrap();
-        let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &validator_key).unwrap();
-        verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
-        verifier.update(&message).unwrap();
-        let verified = verifier.verify(&sig).unwrap();
-        assert!(verified)
+        let decoded_signature = BASE64URL_NOPAD.decode(sig.as_bytes()).unwrap();
+        assert!(key_manager.verify_validator_signature(&signature_data, &decoded_signature));
     }
 }
