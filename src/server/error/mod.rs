@@ -7,7 +7,6 @@ use actix_web::{
 use derive_more::{Display, Error};
 use openssl::error::ErrorStack;
 use paris::log;
-use redis::RedisError;
 
 #[warn(dead_code)]
 #[derive(Debug, Display, Error)]
@@ -35,13 +34,6 @@ impl error::ResponseError for ValidatorServerError {
             ValidatorServerError::BadClientData => StatusCode::BAD_REQUEST,
             ValidatorServerError::Timeout => StatusCode::GATEWAY_TIMEOUT,
         }
-    }
-}
-
-impl From<RedisError> for ValidatorServerError {
-    fn from(e: RedisError) -> Self {
-        log!("Error occurred while performing Redis command - {}", e);
-        ValidatorServerError::InternalError
     }
 }
 

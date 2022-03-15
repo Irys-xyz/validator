@@ -193,6 +193,14 @@ impl server::routes::sign::Config for AppContext {
     fn validator_public_key(&self) -> &openssl::pkey::PKey<Public> {
         &self.validator_public_key
     }
+
+    fn current_epoch(&self) -> i64 {
+        0
+    }
+
+    fn current_block(&self) -> u128 {
+        0
+    }
 }
 
 impl ValidatorStateTrait for AppContext {

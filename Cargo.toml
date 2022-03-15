@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 actix-web = "4.0.0-beta.15"
 clap = { version = "3.1.2", features = ["derive", "env"] }
-redis = { version = "0.21.4", features = ["tokio-comp"] }
 serde = "1.0.132"
 serde_json = "1.0.73"
 tokio = { version = "1.15.0", features = ["full"] }
@@ -31,7 +30,6 @@ diesel = { version = "1.4.8", features = [ "sqlite", "r2d2", "numeric" ] }
 bigint = "4.4.3"
 lazy_static = "1.4.0"
 bb8 = "0.7.1"
-reool = "0.30.0"
 jsonwebkey = "0.3.4"
 dashmap = "5.0.0"
 reqwest = { version = "0.11.9", features = ["blocking", "json", "stream"] }
