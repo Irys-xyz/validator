@@ -2,6 +2,7 @@
 name = "validator-rust"
 version = "0.1.0"
 edition = "2021"
+default-run = "validator"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -43,3 +44,13 @@ futures-util = "0.3"
 version = "1"
 default-features = false
 features = ["user-hooks"]
+
+[[bin]]
+name = "validator"
+path = "src/main.rs"
+
+[[bin]]
+name = "wallet-tool"
+path = "src/wallet_tool.rs"
+test = false
+bench = false
