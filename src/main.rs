@@ -13,7 +13,10 @@ mod types;
 use clap::Parser;
 use cron::run_crons;
 use database::queries;
-use diesel::{sqlite::SqliteConnection, Connection};
+use diesel::{
+    r2d2::{self, ConnectionManager, PooledConnection},
+    sqlite::SqliteConnection,
+};
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager};
 use server::{run_server, RuntimeContext};
@@ -68,7 +71,7 @@ struct AppConfig {
 #[derive(Clone)]
 struct AppContext {
     key_manager: Arc<InMemoryKeyManager>,
-    database_url: String,
+    db_conn_pool: r2d2::Pool<ConnectionManager<SqliteConnection>>,
     redis_connection_url: String,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
@@ -108,9 +111,14 @@ impl AppContext {
         let key_manager = InMemoryKeyManager::new(&(bundler_jwk, validator_jwk));
         let state = generate_state();
 
+        let connection_mgr = ConnectionManager::<SqliteConnection>::new(&config.database_url);
+        let pool = r2d2::Pool::builder()
+            .build(connection_mgr)
+            .expect("Failed to create SQLite connection pool.");
+
         Self {
             key_manager: Arc::new(key_manager),
-            database_url: config.database_url.clone(),
+            db_conn_pool: pool,
             redis_connection_url: config.redis_connection_url.clone(),
             listen: config.listen,
             validator_state: state,
@@ -119,16 +127,18 @@ impl AppContext {
 }
 
 impl queries::RequestContext for AppContext {
-    // FIXME: this should use connection pool
-    fn get_db_connection(&self) -> SqliteConnection {
-        SqliteConnection::establish(&self.database_url)
-            .unwrap_or_else(|_| panic!("Error connecting to {}", self.database_url))
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
+        self.db_conn_pool
+            .get()
+            .expect("Failed to get connection from database connection pool")
     }
 }
 
 impl RuntimeContext for AppContext {
-    fn database_connection_url(&self) -> &str {
-        &self.database_url
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
+        self.db_conn_pool
+            .get()
+            .expect("Failed to get connection from database connection pool")
     }
 
     fn redis_connection_url(&self) -> &str {

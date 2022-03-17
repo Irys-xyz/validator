@@ -15,9 +15,8 @@ use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
     database::{models::NewTransaction, schema::transactions::dsl::*},
     key_manager,
-    server::error::ValidatorServerError,
+    server::{error::ValidatorServerError, RuntimeContext},
     state::{ValidatorState, ValidatorStateTrait},
-    types::DbPool,
 };
 
 pub trait Config<KeyManager>: ValidatorStateTrait
@@ -104,11 +103,10 @@ struct SignedBody {
 
 pub async fn sign_route<Context, KeyManager>(
     ctx: Data<Context>,
-    db: Data<DbPool>,
     body: Json<UnsignedBody>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Context: self::Config<KeyManager>,
+    Context: self::Config<KeyManager> + RuntimeContext + Send,
     KeyManager: key_manager::KeyManager,
 {
     let s = ctx.get_validator_state().load(Ordering::SeqCst);
@@ -121,10 +119,7 @@ where
 
     // Verify
     let exists = {
-        let conn = db.get().map_err(|err| {
-            error!("Failed to get database connection: {:?}", err);
-            ValidatorServerError::InternalError
-        })?;
+        let conn = ctx.get_db_connection();
         let filter = id.eq(body.id.clone());
         actix_rt::task::spawn_blocking(move || {
             match transactions.filter(filter).count().get_result(&conn) {
@@ -182,11 +177,11 @@ where
         sent_to_leader: false,
     };
 
+    let conn = ctx.get_db_connection();
     actix_rt::task::spawn_blocking(move || {
-        let c = db.get().unwrap();
         diesel::insert_into(transactions)
             .values::<NewTransaction>(new_transaction)
-            .execute(&c)
+            .execute(&conn)
     })
     .await??;
 

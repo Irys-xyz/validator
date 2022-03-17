@@ -9,8 +9,8 @@ use actix_web::{
     App, HttpServer,
 };
 use diesel::{
-    r2d2::{ConnectionManager, Pool},
-    sqlite::SqliteConnection,
+    r2d2::{ConnectionManager, PooledConnection},
+    SqliteConnection,
 };
 use paris::info;
 use routes::get_tx::get_tx;
@@ -21,7 +21,7 @@ use crate::{key_manager, server::routes::sign::sign_route, state::ValidatorState
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
-    fn database_connection_url(&self) -> &str;
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
     fn redis_connection_url(&self) -> &str;
 }
 
@@ -37,18 +37,12 @@ where
 {
     env_logger::init();
 
-    let db_url = ctx.database_connection_url().to_string();
     info!("Starting up HTTP server...");
 
     let server_config = ctx.clone();
     HttpServer::new(move || {
-        let conn_manager = ConnectionManager::<SqliteConnection>::new(db_url.clone());
-
-        let postgres_pool = Pool::builder().max_size(10).build(conn_manager).unwrap();
-
         App::new()
             .app_data(Data::new(server_config.clone()))
-            .app_data(Data::new(postgres_pool))
             .wrap(Logger::default())
             .route("/", web::get().to(index))
             .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
