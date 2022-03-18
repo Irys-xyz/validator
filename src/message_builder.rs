@@ -23,11 +23,20 @@ struct Args {
     #[clap(short = 't', long)]
     tx: String,
 
+    #[clap(short = 's', long)]
+    size: usize,
+
+    #[clap(short = 'f', long)]
+    fee: u128,
+
+    #[clap(short = 'c', long)]
+    currency: String,
+
     #[clap(short = 'b', long)]
     promised_block: u128,
 
-    #[clap(short = 'v', long, min_values = 1, required = true)]
-    validators: Vec<String>,
+    #[clap(short = 'v', long)]
+    validator: String,
 }
 
 fn main() {
@@ -39,14 +48,21 @@ fn main() {
         key_manager::split_jwk(&jwk)
     };
 
-    let block = args.promised_block.to_string().as_bytes().to_vec();
-    let tx_id = args.tx.as_bytes().to_vec();
-
+    let tx = args.tx;
+    let size = args.size;
+    let fee = args.fee;
+    let currency = args.currency;
+    let block = args.promised_block;
+    let validator = args.validator;
     let signature_data = deep_hash_sync(DeepHashChunk::Chunks(vec![
         DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
         DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-        DeepHashChunk::Chunk(tx_id.into()),
-        DeepHashChunk::Chunk(block.into()),
+        DeepHashChunk::Chunk(tx.as_bytes().to_owned().into()),
+        DeepHashChunk::Chunk(size.to_string().as_bytes().to_owned().into()),
+        DeepHashChunk::Chunk(fee.to_string().as_bytes().to_owned().into()),
+        DeepHashChunk::Chunk(currency.as_bytes().to_owned().into()),
+        DeepHashChunk::Chunk(block.to_string().as_bytes().to_owned().into()),
+        DeepHashChunk::Chunk(validator.as_bytes().to_owned().into()),
     ]))
     .unwrap();
 
@@ -62,10 +78,7 @@ fn main() {
     let sig = BASE64URL_NOPAD.encode(&buf[0..len]);
 
     println!(
-        r#"{{"id":"{}","signature":"{}","block":{},"validators":{}}}"#,
-        &args.tx,
-        sig,
-        &args.promised_block,
-        serde_json::to_string(&args.validators).unwrap()
+        r#"{{"id":"{}","size":{},"fee":"{}","currency":"{}","block":"{}","validator":"{}","signature":"{}"}}"#,
+        &tx, size, fee, currency, &block, &validator, sig,
     );
 }

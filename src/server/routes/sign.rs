@@ -7,7 +7,7 @@ use bundlr_sdk::deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER};
 use data_encoding::BASE64URL_NOPAD;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use paris::error;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
@@ -28,28 +28,41 @@ where
     fn current_block(&self) -> u128;
 }
 
-#[derive(Deserialize)]
-pub struct UnsignedBody {
-    id: String,
-    signature: String,
-    block: u128,
-    validators: Vec<String>,
+/// Deserializer from string to u128
+fn de_u128<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+    let s: &str = de::Deserialize::deserialize(deserializer)?;
+    s.parse().map_err(|err| de::Error::custom(err))
 }
 
-impl UnsignedBody {
+#[derive(Deserialize, Serialize)]
+pub struct SignRequest {
+    id: String,
+    size: usize,
+    #[serde(deserialize_with = "de_u128")]
+    fee: u128,
+    currency: String,
+    #[serde(deserialize_with = "de_u128")]
+    block: u128,
+    validator: String,
+    signature: String,
+}
+
+impl SignRequest {
     // FIXME: needs proper error type
     pub async fn verify<KeyManager>(&self, key_manager: &KeyManager) -> Result<bool, ()>
     where
         KeyManager: key_manager::KeyManager,
     {
-        let block = self.block.to_string().as_bytes().to_vec();
-        let tx_id = self.id.as_bytes().to_vec();
-
+        // FIXME: fix lifetimes in DeepHashChunk::Chunk and deep_hash to avoid copying the data
         let signature_data = deep_hash(DeepHashChunk::Chunks(vec![
             DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
             DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-            DeepHashChunk::Chunk(tx_id.into()),
-            DeepHashChunk::Chunk(block.into()),
+            DeepHashChunk::Chunk(self.id.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.size.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.fee.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.currency.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.block.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.validator.as_bytes().to_owned().into()),
         ]))
         .await
         .map_err(|err| {
@@ -66,18 +79,16 @@ impl UnsignedBody {
         Ok(key_manager.verify_bundler_signature(&signature_data, &decoded_signature))
     }
 
-    // FIXME: needs proper error type
     pub async fn sign<KeyManager>(&self, key_manager: &KeyManager) -> Result<String, ()>
     where
         KeyManager: key_manager::KeyManager,
     {
-        let tx_id = self.id.as_bytes().to_vec();
         let bundler_address = key_manager.bundler_address().to_string();
 
         let signature_data = deep_hash(DeepHashChunk::Chunks(vec![
             DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
             DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-            DeepHashChunk::Chunk(tx_id.into()),
+            DeepHashChunk::Chunk(self.id.as_bytes().to_owned().into()),
             DeepHashChunk::Chunk(bundler_address.into()),
         ]))
         .await
@@ -89,19 +100,9 @@ impl UnsignedBody {
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SignedBody {
-    id: String,
-    signature: String,
-    block: u128,
-    validator_address: String,
-    validator_signature: String,
-}
-
 pub async fn sign_route<Context, KeyManager>(
     ctx: Data<Context>,
-    body: Json<UnsignedBody>,
+    body: Json<SignRequest>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
     Context: self::Config<KeyManager> + RuntimeContext + Send,
@@ -136,10 +137,7 @@ where
     let current_block = ctx.current_block();
     let key_manager = ctx.key_manager();
 
-    if !body
-        .validators
-        .contains(&ctx.validator_address().to_string())
-    {
+    if body.validator != ctx.validator_address().to_string() {
         return Ok(HttpResponse::BadRequest().finish());
     }
 
@@ -217,24 +215,23 @@ mod tests {
         server::routes::sign::sign_route,
     };
 
-    use super::UnsignedBody;
-    fn test_message(
-        signing_key: &PKey<Private>,
-        block: u128,
-        validators: Vec<String>,
-    ) -> UnsignedBody {
-        let tx_id = "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk";
-        let signature_data = {
-            let block = block.to_string().as_bytes().to_vec();
-            let tx_id = tx_id.as_bytes().to_vec();
-            deep_hash_sync(DeepHashChunk::Chunks(vec![
-                DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
-                DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-                DeepHashChunk::Chunk(tx_id.into()),
-                DeepHashChunk::Chunk(block.into()),
-            ]))
-            .unwrap()
-        };
+    use super::SignRequest;
+    fn test_message(signing_key: &PKey<Private>, block: u128, validator: String) -> SignRequest {
+        let tx = "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk";
+        let size = 0usize;
+        let fee = 0u128;
+        let currency = "FOO";
+        let signature_data = deep_hash_sync(DeepHashChunk::Chunks(vec![
+            DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
+            DeepHashChunk::Chunk(tx.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(size.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(fee.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(currency.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(block.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(validator.as_bytes().to_owned().into()),
+        ]))
+        .unwrap();
 
         let (buf, len) = {
             let mut signer = sign::Signer::new(MessageDigest::sha256(), &signing_key).unwrap();
@@ -247,11 +244,14 @@ mod tests {
 
         let sig = BASE64URL_NOPAD.encode(&buf[0..len]);
 
-        UnsignedBody {
-            id: tx_id.to_string(),
-            signature: sig,
+        SignRequest {
+            id: tx.to_owned(),
+            size,
+            fee,
+            currency: currency.to_owned(),
             block,
-            validators,
+            validator,
+            signature: sig,
         }
     }
 
@@ -262,7 +262,7 @@ mod tests {
         let msg = test_message(
             &bundler_private_key,
             500,
-            vec![key_manager.validator_address().to_string()],
+            key_manager.validator_address().to_string(),
         );
 
         assert!(msg.verify(&key_manager).await.unwrap())
@@ -279,7 +279,7 @@ mod tests {
         let msg = test_message(
             &bundler_private_key,
             500,
-            vec![key_manager.validator_address().to_string()],
+            key_manager.validator_address().to_string(),
         );
 
         let sig = msg.sign(&key_manager).await.unwrap();
