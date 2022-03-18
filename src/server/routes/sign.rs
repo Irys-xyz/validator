@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use actix_web::{
     web::{Data, Json},
     HttpResponse,
@@ -16,10 +14,10 @@ use crate::{
     database::{models::NewTransaction, schema::transactions::dsl::*},
     key_manager,
     server::{error::ValidatorServerError, RuntimeContext},
-    state::{ValidatorState, ValidatorStateTrait},
+    state::{ValidatorRole, ValidatorStateAccess},
 };
 
-pub trait Config<KeyManager>: ValidatorStateTrait
+pub trait Config<KeyManager>: ValidatorStateAccess
 where
     KeyManager: key_manager::KeyManager,
 {
@@ -109,9 +107,7 @@ where
     Context: self::Config<KeyManager> + RuntimeContext + Send,
     KeyManager: key_manager::KeyManager,
 {
-    let s = ctx.get_validator_state().load(Ordering::SeqCst);
-
-    if s != ValidatorState::Cosigner {
+    if ctx.get_validator_state().role() != ValidatorRole::Cosigner {
         return Ok(HttpResponse::BadRequest().finish());
     }
 

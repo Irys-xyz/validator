@@ -1,6 +1,5 @@
 use crate::database::queries;
-use crate::state::ValidatorState;
-use std::sync::atomic::Ordering;
+use crate::state::ValidatorRole;
 use std::sync::Arc;
 
 use super::bundle::{get_bundler, validate_bundler};
@@ -12,12 +11,10 @@ where
 {
     let bundler = get_bundler().await?;
 
-    let s = ctx.get_validator_state().load(Ordering::SeqCst);
-    match s {
-        s if s == ValidatorState::Cosigner => validate_bundler(&*ctx, bundler).await?,
-        s if s == ValidatorState::Idle => (),
-        s if s == ValidatorState::Leader => (),
-        _ => panic!("Unknown validator state: {:?}", s),
+    match ctx.get_validator_state().role() {
+        ValidatorRole::Cosigner => validate_bundler(&*ctx, bundler).await?,
+        ValidatorRole::Leader => (),
+        ValidatorRole::Idle => (),
     }
 
     Ok(())

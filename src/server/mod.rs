@@ -17,7 +17,7 @@ use routes::get_tx::get_tx;
 use routes::index::index;
 use routes::post_tx::post_tx;
 
-use crate::{key_manager, server::routes::sign::sign_route, state::ValidatorStateTrait};
+use crate::{key_manager, server::routes::sign::sign_route, state::ValidatorStateAccess};
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
@@ -29,7 +29,7 @@ pub async fn run_server<Context, KeyManager>(ctx: Context) -> std::io::Result<()
 where
     Context: RuntimeContext
         + routes::sign::Config<KeyManager>
-        + ValidatorStateTrait
+        + ValidatorStateAccess
         + Clone
         + Send
         + 'static,

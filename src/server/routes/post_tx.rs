@@ -1,10 +1,10 @@
-use std::sync::{atomic::Ordering, RwLock};
+use std::sync::RwLock;
 
 use crate::{
     database::schema::transactions::dsl::*,
     key_manager,
     server::{error::ValidatorServerError, RuntimeContext},
-    state::ValidatorState,
+    state::ValidatorRole,
 };
 use actix_web::{
     web::{Data, Json},
@@ -42,8 +42,7 @@ where
     Context: super::sign::Config<KeyManager> + RuntimeContext + 'static,
     KeyManager: key_manager::KeyManager + Clone + Send + 'static,
 {
-    let s = ctx.get_validator_state().load(Ordering::SeqCst);
-    if s != ValidatorState::Leader {
+    if ctx.get_validator_state().role() != ValidatorRole::Leader {
         return Ok(HttpResponse::BadRequest().finish());
     }
 

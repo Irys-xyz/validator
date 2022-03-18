@@ -7,9 +7,9 @@ use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
-use crate::state::ValidatorStateTrait;
+use crate::state::ValidatorStateAccess;
 
-pub trait RequestContext: ValidatorStateTrait {
+pub trait RequestContext: ValidatorStateAccess {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
 }
 

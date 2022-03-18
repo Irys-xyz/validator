@@ -20,7 +20,7 @@ use diesel::{
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager};
 use server::{run_server, RuntimeContext};
-use state::{generate_state, SharedValidatorState, ValidatorStateTrait};
+use state::{generate_state, SharedValidatorState, ValidatorStateAccess};
 use std::{fs, net::SocketAddr, sync::Arc};
 
 #[derive(Clone, Debug, Parser)]
@@ -172,7 +172,7 @@ impl server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppContext {
     }
 }
 
-impl ValidatorStateTrait for AppContext {
+impl ValidatorStateAccess for AppContext {
     fn get_validator_state(&self) -> &SharedValidatorState {
         &self.validator_state
     }
