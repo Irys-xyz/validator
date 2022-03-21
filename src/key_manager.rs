@@ -46,7 +46,7 @@ where
     }
 }
 
-fn split_jwk(jwk: &JsonWebKey) -> (PKey<Private>, PKey<Public>, String) {
+pub fn split_jwk(jwk: &JsonWebKey) -> (PKey<Private>, PKey<Public>, String) {
     let priv_key = {
         let der = jwk.key.try_to_der().unwrap();
         PKey::private_key_from_der(der.as_slice()).unwrap()
@@ -63,7 +63,7 @@ fn split_jwk(jwk: &JsonWebKey) -> (PKey<Private>, PKey<Public>, String) {
     (priv_key, pub_key, address)
 }
 
-fn split_public_only_jwk(jwk: &JsonWebKey) -> (PKey<Public>, String) {
+pub fn split_public_only_jwk(jwk: &JsonWebKey) -> (PKey<Public>, String) {
     let der = if jwk.key.is_private() {
         let pub_key = jwk.key.to_public().unwrap();
         pub_key.try_to_der().unwrap()

@@ -2,22 +2,19 @@ use actix_web::{web::Data, HttpResponse};
 
 use crate::{
     database::{models::Transaction, schema::transactions::dsl::*},
-    server::error::ValidatorServerError,
-    state::ValidatorStateTrait,
-    types::DbPool,
+    server::{error::ValidatorServerError, RuntimeContext},
 };
 use diesel::prelude::*;
 
-pub async fn get_tx<Config>(
-    _ctx: Data<Config>,
-    db: Data<DbPool>,
+pub async fn get_tx<Context>(
+    ctx: Data<Context>,
     path: (String,),
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Config: ValidatorStateTrait,
+    Context: RuntimeContext,
 {
+    let conn = ctx.get_db_connection();
     let res = actix_rt::task::spawn_blocking(move || {
-        let conn = db.get().unwrap();
         transactions
             .filter(id.eq(path.0))
             .first::<Transaction>(&conn)

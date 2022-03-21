@@ -1,8 +1,10 @@
-use std::sync::{atomic::Ordering, RwLock};
+use std::sync::RwLock;
 
 use crate::{
-    database::schema::transactions::dsl::*, key_manager, server::error::ValidatorServerError,
-    state::ValidatorState, types::DbPool,
+    database::schema::transactions::dsl::*,
+    key_manager,
+    server::{error::ValidatorServerError, RuntimeContext},
+    state::ValidatorRole,
 };
 use actix_web::{
     web::{Data, Json},
@@ -11,7 +13,6 @@ use actix_web::{
 use bundlr_sdk::{deep_hash::DeepHashChunk, deep_hash_sync::deep_hash_sync};
 use bytes::Bytes;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
-use paris::error;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -31,19 +32,17 @@ pub struct PostTxBody {
 }
 
 // Receive Bundlr transaction receipt
-pub async fn post_tx<Config, KeyManager>(
-    ctx: Data<Config>,
+pub async fn post_tx<Context, KeyManager>(
+    ctx: Data<Context>,
     body: Json<PostTxBody>,
-    db: Data<DbPool>,
     _awc_client: Data<awc::Client>,
     validators: Data<RwLock<Vec<String>>>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Config: super::sign::Config<KeyManager> + 'static,
+    Context: super::sign::Config<KeyManager> + RuntimeContext + 'static,
     KeyManager: key_manager::KeyManager + Clone + Send + 'static,
 {
-    let s = ctx.get_validator_state().load(Ordering::SeqCst);
-    if s != ValidatorState::Leader {
+    if ctx.get_validator_state().role() != ValidatorRole::Leader {
         return Ok(HttpResponse::BadRequest().finish());
     }
 
@@ -51,10 +50,7 @@ where
     let body = body.into_inner();
 
     let exists = {
-        let conn = db.get().map_err(|err| {
-            error!("Failed to get database connection: {:?}", err);
-            ValidatorServerError::InternalError
-        })?;
+        let conn = ctx.get_db_connection();
         let filter = id.eq(body.id.clone());
         actix_rt::task::spawn_blocking(move || {
             match transactions.filter(filter).count().get_result(&conn) {

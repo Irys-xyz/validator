@@ -1,4 +1,5 @@
 use diesel::prelude::*;
+use diesel::r2d2::{ConnectionManager, PooledConnection};
 use diesel::result::Error;
 use diesel::QueryDsl;
 extern crate diesel;
@@ -6,10 +7,10 @@ use crate::database::models::{Bundle, NewBundle, NewTransaction, Transaction};
 use crate::database::schema::bundle::dsl::*;
 use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
-use crate::state::ValidatorStateTrait;
+use crate::state::ValidatorStateAccess;
 
-pub trait RequestContext: ValidatorStateTrait {
-    fn get_db_connection(&self) -> SqliteConnection;
+pub trait RequestContext: ValidatorStateAccess {
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
 }
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
