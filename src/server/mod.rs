@@ -25,7 +25,6 @@ use crate::server::routes::test::set_state;
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
-    fn redis_connection_url(&self) -> &str;
 }
 
 pub async fn run_server<Context, KeyManager>(ctx: Context) -> std::io::Result<()>

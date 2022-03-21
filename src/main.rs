@@ -39,10 +39,6 @@ struct AppConfig {
     #[clap(long, env, default_value = "postgres://bundlr:bundlr@127.0.0.1/bundlr")]
     database_url: String,
 
-    /// Redis connection URL
-    #[clap(long, env, default_value = "redis://127.0.0.1")]
-    redis_connection_url: String,
-
     /// Listen address for the server
     #[clap(short, long, env, default_value = "127.0.0.1:10000")]
     listen: SocketAddr,
@@ -74,7 +70,6 @@ struct AppConfig {
 pub struct AppContext {
     key_manager: Arc<InMemoryKeyManager>,
     db_conn_pool: r2d2::Pool<ConnectionManager<SqliteConnection>>,
-    redis_connection_url: String,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
 }
@@ -121,7 +116,6 @@ impl AppContext {
         Self {
             key_manager: Arc::new(key_manager),
             db_conn_pool: pool,
-            redis_connection_url: config.redis_connection_url.clone(),
             listen: config.listen,
             validator_state: state,
         }
@@ -141,10 +135,6 @@ impl RuntimeContext for AppContext {
         self.db_conn_pool
             .get()
             .expect("Failed to get connection from database connection pool")
-    }
-
-    fn redis_connection_url(&self) -> &str {
-        &self.redis_connection_url
     }
 
     fn bind_address(&self) -> &SocketAddr {
@@ -226,7 +216,6 @@ pub mod test_utils {
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
-            redis_connection_url: "".to_string(),
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
         }
