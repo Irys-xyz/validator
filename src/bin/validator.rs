@@ -27,7 +27,7 @@ struct AppConfig {
     no_server: bool,
 
     /// Database connection URL
-    #[clap(long, env, default_value = "postgres://bundlr:bundlr@127.0.0.1/bundlr")]
+    #[clap(long, env, default_value = "validator.db")]
     database_url: String,
 
     /// Listen address for the server
