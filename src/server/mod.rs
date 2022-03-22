@@ -18,7 +18,7 @@ use routes::index::index;
 use routes::post_tx::post_tx;
 
 use crate::{
-    database::queries::RequestContext, key_manager, server::routes::sign::sign_route,
+    database::queries::QueryContext, key_manager, server::routes::sign::sign_route,
     state::ValidatorStateAccess,
 };
 
@@ -36,7 +36,7 @@ where
     Context: RuntimeContext
         + routes::sign::Config<KeyManager>
         + ValidatorStateAccess
-        + RequestContext
+        + QueryContext
         + Clone
         + Send
         + 'static,

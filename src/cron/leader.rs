@@ -30,7 +30,7 @@ pub struct ReqBody {
 
 pub async fn send_txs_to_leader<Context>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext,
+    Context: queries::QueryContext,
 {
     let _res = post_transactions(&*ctx).await;
     Ok(())
@@ -45,7 +45,7 @@ pub fn get_leader() -> Result<Validator, ValidatorCronError> {
 
 pub async fn post_transactions<Context>(ctx: &Context) -> std::io::Result<()>
 where
-    Context: queries::RequestContext,
+    Context: queries::QueryContext,
 {
     let txs = get_unposted_txs(ctx).await.unwrap();
     let leader = get_leader().unwrap();

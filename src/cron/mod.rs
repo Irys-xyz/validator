@@ -17,7 +17,7 @@ use self::error::ValidatorCronError;
 // Update contract state
 pub async fn run_crons<Context>(ctx: Context)
 where
-    Context: queries::RequestContext + arweave::ArweaveContext + Clone,
+    Context: queries::QueryContext + arweave::ArweaveContext + Clone,
 {
     info!("Validator starting ...");
     join!(

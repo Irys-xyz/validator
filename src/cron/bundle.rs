@@ -49,11 +49,11 @@ pub async fn validate_bundler<Context>(
     bundler: Bundler,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext + arweave::ArweaveContext,
+    Context: queries::QueryContext + arweave::ArweaveContext,
 {
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
     let txs_req = arweave
-        .get_latest_transactions::<Context>(&bundler.address, Some(50), None, ctx)
+        .get_latest_transactions(ctx, &bundler.address, Some(50), None)
         .await;
 
     if let Err(r) = txs_req {
@@ -97,7 +97,7 @@ async fn validate_bundle<Context>(
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext + arweave::ArweaveContext,
+    Context: queries::QueryContext + arweave::ArweaveContext,
 {
     let block_ok = check_bundle_block(ctx, bundler, bundle).await;
     let current_block: Option<i64> = None;
@@ -108,7 +108,7 @@ where
         return Ok(());
     }
 
-    let path = match arweave.get_tx_data::<Context>(&bundle.id, ctx).await {
+    let path = match arweave.get_tx_data::<Context>(ctx, &bundle.id).await {
         Ok(path) => path,
         Err(err) => {
             error!("File path error {:?}", err);
@@ -151,7 +151,7 @@ async fn check_bundle_block<Context>(
     bundle: &ArweaveTx,
 ) -> Result<Option<i64>, ValidatorCronError>
 where
-    Context: queries::RequestContext,
+    Context: queries::QueryContext,
 {
     let current_block = match bundle.block {
         Some(ref block) => block
@@ -199,7 +199,7 @@ async fn verify_bundle_tx<Context>(
     current_block: Option<i64>,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext,
+    Context: queries::QueryContext,
 {
     let tx = get_tx(ctx, &bundle_tx.tx_id).await;
     let mut tx_receipt: Option<TxReceipt> = None;

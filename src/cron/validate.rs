@@ -8,7 +8,7 @@ use super::error::ValidatorCronError;
 
 pub async fn validate<Context>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext + arweave::ArweaveContext,
+    Context: queries::QueryContext + arweave::ArweaveContext,
 {
     let bundler = get_bundler().await?;
 

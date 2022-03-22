@@ -136,11 +136,15 @@ impl AppContext {
     }
 }
 
-impl queries::RequestContext for AppContext {
+impl queries::QueryContext for AppContext {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
         self.db_conn_pool
             .get()
             .expect("Failed to get connection from database connection pool")
+    }
+
+    fn current_epoch(&self) -> i64 {
+        0
     }
 }
 

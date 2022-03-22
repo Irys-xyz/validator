@@ -146,8 +146,8 @@ impl Arweave {
 
     pub async fn get_tx_data<Context>(
         &self,
-        transaction_id: &str,
         ctx: &Context,
+        transaction_id: &str,
     ) -> reqwest::Result<String>
     where
         Context: ArweaveContext,
@@ -185,10 +185,10 @@ impl Arweave {
 
     pub async fn get_latest_transactions<Context>(
         &self,
+        ctx: &Context,
         owner: &str,
         first: Option<i64>,
         after: Option<String>,
-        ctx: &Context,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError>
     where
         Context: ArweaveContext,

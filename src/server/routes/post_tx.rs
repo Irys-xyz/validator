@@ -3,7 +3,7 @@ use std::sync::RwLock;
 use crate::{
     database::{
         models::NewTransaction,
-        queries::{insert_tx_in_db, RequestContext},
+        queries::{insert_tx_in_db, QueryContext},
         schema::transactions::dsl::*,
     },
     key_manager,
@@ -43,7 +43,7 @@ pub async fn post_tx<Context, KeyManager>(
     validators: Data<RwLock<Vec<String>>>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Context: super::sign::Config<KeyManager> + RequestContext + 'static,
+    Context: super::sign::Config<KeyManager> + QueryContext + 'static,
     KeyManager: key_manager::KeyManager + Clone + Send + 'static,
 {
     if ctx.get_validator_state().role() != ValidatorRole::Leader {
@@ -104,11 +104,11 @@ fn deep_hash_body(body: &PostTxBody) -> Result<Bytes, ValidatorServerError> {
 
 async fn add_to_db<Config>(ctx: &Config, body: &PostTxBody) -> Result<(), ValidatorServerError>
 where
-    Config: RequestContext + 'static,
+    Config: QueryContext + 'static,
 {
     let tx = NewTransaction {
         id: body.id.clone(),
-        epoch: 0,
+        epoch: ctx.current_epoch(),
         block_promised: body.block,
         block_actual: None,
         signature: body.signature.as_bytes().to_vec(),
