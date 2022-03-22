@@ -7,7 +7,7 @@ use bundlr_sdk::deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER};
 use data_encoding::BASE64URL_NOPAD;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use paris::error;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
@@ -34,14 +34,23 @@ fn de_u128<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error>
     s.parse().map_err(|err| de::Error::custom(err))
 }
 
+/// Serialize as string
+fn ser_as_string<S, T>(val: &T, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: ToString,
+{
+    serializer.serialize_str(&val.to_string())
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct SignRequest {
     id: String,
     size: usize,
-    #[serde(deserialize_with = "de_u128")]
+    #[serde(deserialize_with = "de_u128", serialize_with = "ser_as_string")]
     fee: u128,
     currency: String,
-    #[serde(deserialize_with = "de_u128")]
+    #[serde(deserialize_with = "de_u128", serialize_with = "ser_as_string")]
     block: u128,
     validator: String,
     signature: String,
@@ -143,23 +152,23 @@ where
     let key_manager = ctx.key_manager();
 
     if body.validator != ctx.validator_address().to_string() {
-        return Ok(HttpResponse::BadRequest().finish());
+        return Ok(HttpResponse::BadRequest().body("Invalid validator address"));
     }
 
     // Check that the body.block is not too far in the past nor too far in the future
     match body.block.cmp(&current_block) {
         std::cmp::Ordering::Less if current_block - body.block > 5 => {
-            return Ok(HttpResponse::BadRequest().finish())
+            return Ok(HttpResponse::BadRequest().body("Invalid block number"))
         }
         std::cmp::Ordering::Greater if body.block - current_block > 5 => {
-            return Ok(HttpResponse::BadRequest().finish())
+            return Ok(HttpResponse::BadRequest().body("Invalid block number"))
         }
         _ => (),
     }
 
     match body.verify(key_manager).await {
         Ok(true) => (),
-        Ok(false) => return Ok(HttpResponse::BadRequest().finish()),
+        Ok(false) => return Ok(HttpResponse::BadRequest().body("Invalid bundler signature")),
         Err(()) => return Err(ValidatorServerError::InternalError),
     };
 
@@ -199,8 +208,10 @@ where
 #[cfg(test)]
 mod tests {
     use actix_web::{
-        http::{self, header::ContentType},
-        test,
+        http::header::ContentType,
+        test::{call_service, init_service, TestRequest},
+        web::{self, Data},
+        App,
     };
     use bundlr_sdk::{
         deep_hash::{DeepHashChunk, ONE_AS_BUFFER},
@@ -213,10 +224,15 @@ mod tests {
         rsa::Padding,
         sign,
     };
+    use reqwest::StatusCode;
 
     use crate::{
         consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
         key_manager::{test_utils::test_keys, KeyManager},
+        server::routes::sign::{sign_route, Config},
+        state::ValidatorStateAccess,
+        test_utils::test_context,
+        AppContext,
     };
 
     use super::SignRequest;
@@ -304,5 +320,153 @@ mod tests {
 
         let decoded_signature = BASE64URL_NOPAD.decode(sig.as_bytes()).unwrap();
         assert!(key_manager.verify_validator_signature(&signature_data, &decoded_signature));
+    }
+
+    #[actix_web::test]
+    async fn valid_sign_request_returns_valid_validator_signature() {
+        let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
+        let ctx = test_context(key_manager);
+
+        let app = App::new()
+            .app_data(Data::new(ctx.clone()))
+            .route("/", web::post().to(sign_route::<AppContext, _>));
+
+        let app = init_service(app).await;
+
+        let msg = test_message(
+            &bundler_private_key,
+            5,
+            ctx.key_manager().validator_address().to_string(),
+        );
+
+        let req = TestRequest::post()
+            .uri("/")
+            .insert_header(ContentType::json())
+            .set_json(msg)
+            .to_request();
+
+        let res = call_service(&app, req).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "Failed: {:?}",
+            res.into_body()
+        );
+    }
+
+    #[actix_web::test]
+    async fn block_number_too_far_ahead_yields_bad_request() {
+        let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
+        let ctx = test_context(key_manager);
+
+        let app = App::new()
+            .app_data(Data::new(ctx.clone()))
+            .route("/", web::post().to(sign_route::<AppContext, _>));
+
+        let app = init_service(app).await;
+
+        let msg = test_message(
+            &bundler_private_key,
+            11,
+            ctx.key_manager().validator_address().to_string(),
+        );
+
+        let req = TestRequest::post()
+            .uri("/")
+            .insert_header(ContentType::json())
+            .set_json(msg)
+            .to_request();
+
+        let res = call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST,);
+    }
+
+    #[actix_web::test]
+    async fn block_number_too_far_behind_yields_bad_request() {
+        let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
+        let ctx = test_context(key_manager);
+        ctx.get_validator_state().set_current_block(30);
+
+        let app = App::new()
+            .app_data(Data::new(ctx.clone()))
+            .route("/", web::post().to(sign_route::<AppContext, _>));
+
+        let app = init_service(app).await;
+
+        let msg = test_message(
+            &bundler_private_key,
+            10,
+            ctx.key_manager().validator_address().to_string(),
+        );
+
+        let req = TestRequest::post()
+            .uri("/")
+            .insert_header(ContentType::json())
+            .set_json(msg)
+            .to_request();
+
+        let res = call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST,);
+    }
+
+    #[actix_web::test]
+    async fn wrong_bundler_signature_yields_bad_request() {
+        let (key_manager, _) = crate::key_manager::test_utils::test_keys();
+        let ctx = test_context(key_manager);
+
+        let app = App::new()
+            .app_data(Data::new(ctx.clone()))
+            .route("/", web::post().to(sign_route::<AppContext, _>));
+
+        let app = init_service(app).await;
+
+        let msg = {
+            let (_, wrong_key) = crate::key_manager::test_utils::test_keys();
+            test_message(
+                &wrong_key,
+                5,
+                ctx.key_manager().validator_address().to_string(),
+            )
+        };
+
+        let req = TestRequest::post()
+            .uri("/")
+            .insert_header(ContentType::json())
+            .set_json(msg)
+            .to_request();
+
+        let res = call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST,);
+    }
+
+    #[actix_web::test]
+    async fn wrong_validator_address_yields_bad_request() {
+        let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
+        let ctx = test_context(key_manager);
+
+        let app = App::new()
+            .app_data(Data::new(ctx.clone()))
+            .route("/", web::post().to(sign_route::<AppContext, _>));
+
+        let app = init_service(app).await;
+
+        let msg = {
+            test_message(
+                &bundler_private_key,
+                5,
+                // Use bundler address, main point is to use any other address,
+                // but validator's correct one
+                ctx.key_manager().bundler_address().to_string(),
+            )
+        };
+
+        let req = TestRequest::post()
+            .uri("/")
+            .insert_header(ContentType::json())
+            .set_json(msg)
+            .to_request();
+
+        let res = call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST,);
     }
 }
