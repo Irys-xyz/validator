@@ -7,6 +7,7 @@ mod bundle;
 mod consts;
 mod cron;
 mod database;
+mod http;
 mod key_manager;
 mod server;
 mod state;

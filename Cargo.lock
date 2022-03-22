@@ -207,7 +207,7 @@ dependencies = [
  "smallvec",
  "socket2",
  "time 0.3.5",
- "url",
+ "url 2.2.2",
 ]
 
 [[package]]
@@ -363,7 +363,7 @@ dependencies = [
  "strum_macros",
  "thiserror",
  "typed-builder",
- "uuid",
+ "uuid 0.8.2",
  "zerocopy",
 ]
 
@@ -1808,6 +1808,16 @@ dependencies = [
 
 [[package]]
 name = "rand"
+version = "0.3.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64ac302d8f83c0c1974bf758f6b041c6c8ada916fbb44a609158ca8b064cc76c"
+dependencies = [
+ "libc",
+ "rand 0.4.6",
+]
+
+[[package]]
+name = "rand"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "552840b97013b1a26992c11eac34bdd778e464601a4c2054b5f0bff7c6761293"
@@ -2008,7 +2018,7 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
  "tokio-util",
- "url",
+ "url 2.2.2",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -2548,6 +2558,17 @@ checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "url"
+version = "0.2.38"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbaa8377a162d88e7d15db0cf110c8523453edcbc5bc66d2b6fffccffa34a068"
+dependencies = [
+ "matches",
+ "rustc-serialize",
+ "uuid 0.1.18",
+]
+
+[[package]]
+name = "url"
 version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a507c383b2d33b5fc35d1861e77e6b383d158b2da5e14fe51b83dfedf6fd578c"
@@ -2563,6 +2584,16 @@ name = "utf8-ranges"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1ca13c08c41c9c3e04224ed9ff80461d97e121589ff27c753a16cb10830ae0f"
+
+[[package]]
+name = "uuid"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78c590b5bd79ed10aad8fb75f078a59d8db445af6c743e55c4a53227fc01c13f"
+dependencies = [
+ "rand 0.3.23",
+ "rustc-serialize",
+]
 
 [[package]]
 name = "uuid"
@@ -2600,6 +2631,7 @@ dependencies = [
  "env_logger",
  "futures",
  "futures-util",
+ "http",
  "indexmap",
  "jsonwebkey",
  "lazy_static",
@@ -2612,6 +2644,7 @@ dependencies = [
  "serde_json 1.0.75",
  "tokio",
  "tracing",
+ "url 0.2.38",
 ]
 
 [[package]]
