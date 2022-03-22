@@ -229,6 +229,7 @@ mod tests {
     use crate::{
         consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
         context::{test_utils::test_context, AppContext},
+        http::reqwest::mock::MockHttpClient,
         key_manager::{test_utils::test_keys, KeyManager},
         server::routes::sign::{sign_route, Config},
         state::ValidatorStateAccess,
@@ -326,9 +327,10 @@ mod tests {
         let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
         let ctx = test_context(key_manager);
 
-        let app = App::new()
-            .app_data(Data::new(ctx.clone()))
-            .route("/", web::post().to(sign_route::<AppContext, _>));
+        let app = App::new().app_data(Data::new(ctx.clone())).route(
+            "/",
+            web::post().to(sign_route::<AppContext<MockHttpClient>, _>),
+        );
 
         let app = init_service(app).await;
 
@@ -358,9 +360,10 @@ mod tests {
         let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
         let ctx = test_context(key_manager);
 
-        let app = App::new()
-            .app_data(Data::new(ctx.clone()))
-            .route("/", web::post().to(sign_route::<AppContext, _>));
+        let app = App::new().app_data(Data::new(ctx.clone())).route(
+            "/",
+            web::post().to(sign_route::<AppContext<MockHttpClient>, _>),
+        );
 
         let app = init_service(app).await;
 
@@ -386,9 +389,10 @@ mod tests {
         let ctx = test_context(key_manager);
         ctx.get_validator_state().set_current_block(30);
 
-        let app = App::new()
-            .app_data(Data::new(ctx.clone()))
-            .route("/", web::post().to(sign_route::<AppContext, _>));
+        let app = App::new().app_data(Data::new(ctx.clone())).route(
+            "/",
+            web::post().to(sign_route::<AppContext<MockHttpClient>, _>),
+        );
 
         let app = init_service(app).await;
 
@@ -413,9 +417,10 @@ mod tests {
         let (key_manager, _) = crate::key_manager::test_utils::test_keys();
         let ctx = test_context(key_manager);
 
-        let app = App::new()
-            .app_data(Data::new(ctx.clone()))
-            .route("/", web::post().to(sign_route::<AppContext, _>));
+        let app = App::new().app_data(Data::new(ctx.clone())).route(
+            "/",
+            web::post().to(sign_route::<AppContext<MockHttpClient>, _>),
+        );
 
         let app = init_service(app).await;
 
@@ -443,9 +448,10 @@ mod tests {
         let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
         let ctx = test_context(key_manager);
 
-        let app = App::new()
-            .app_data(Data::new(ctx.clone()))
-            .route("/", web::post().to(sign_route::<AppContext, _>));
+        let app = App::new().app_data(Data::new(ctx.clone())).route(
+            "/",
+            web::post().to(sign_route::<AppContext<MockHttpClient>, _>),
+        );
 
         let app = init_service(app).await;
 

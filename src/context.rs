@@ -9,6 +9,7 @@ use jsonwebkey::JsonWebKey;
 use crate::{
     cron::arweave::ArweaveContext,
     database::queries,
+    http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager},
     server::{self, RuntimeContext},
     state::{SharedValidatorState, ValidatorStateAccess},
@@ -27,12 +28,12 @@ impl InMemoryKeyManagerConfig for Keys {
 }
 
 #[derive(Clone)]
-pub struct AppContext {
+pub struct AppContext<HttpClient = ReqwestClient> {
     key_manager: Arc<InMemoryKeyManager>,
     db_conn_pool: r2d2::Pool<ConnectionManager<SqliteConnection>>,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
-    http_client: reqwest::Client,
+    http_client: HttpClient,
 }
 
 impl AppContext {
@@ -48,12 +49,12 @@ impl AppContext {
             db_conn_pool,
             listen,
             validator_state,
-            http_client,
+            http_client: ReqwestClient::new(http_client),
         }
     }
 }
 
-impl queries::QueryContext for AppContext {
+impl<HttpClient> queries::QueryContext for AppContext<HttpClient> {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
         self.db_conn_pool
             .get()
@@ -65,7 +66,7 @@ impl queries::QueryContext for AppContext {
     }
 }
 
-impl RuntimeContext for AppContext {
+impl<HttpClient> RuntimeContext for AppContext<HttpClient> {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
         self.db_conn_pool
             .get()
@@ -77,7 +78,7 @@ impl RuntimeContext for AppContext {
     }
 }
 
-impl server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppContext {
+impl<HttpClient> server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppContext<HttpClient> {
     fn bundler_address(&self) -> &str {
         self.key_manager.bundler_address()
     }
@@ -99,14 +100,18 @@ impl server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppContext {
     }
 }
 
-impl ValidatorStateAccess for AppContext {
+impl<HttpClient> ValidatorStateAccess for AppContext<HttpClient> {
     fn get_validator_state(&self) -> &SharedValidatorState {
         &self.validator_state
     }
 }
 
-impl ArweaveContext for AppContext {
-    fn get_client(&self) -> reqwest::Client {
+impl<HttpClient> ArweaveContext<HttpClient> for AppContext<HttpClient>
+where
+    HttpClient:
+        crate::http::Client<Request = reqwest::Request, Response = reqwest::Response> + Clone,
+{
+    fn get_client(&self) -> HttpClient {
         self.http_client.clone()
     }
 }
@@ -116,7 +121,9 @@ pub mod test_utils {
     use std::sync::Arc;
 
     use super::AppContext;
-    use crate::{key_manager::InMemoryKeyManager, state::generate_state};
+    use crate::{
+        http::reqwest::mock::MockHttpClient, key_manager::InMemoryKeyManager, state::generate_state,
+    };
     use diesel::{
         r2d2::{self, ConnectionManager},
         SqliteConnection,
@@ -124,7 +131,7 @@ pub mod test_utils {
 
     embed_migrations!();
 
-    pub fn test_context(key_manager: InMemoryKeyManager) -> AppContext {
+    pub fn test_context(key_manager: InMemoryKeyManager) -> AppContext<MockHttpClient> {
         let connection_mgr = ConnectionManager::<SqliteConnection>::new(":memory:");
         let db_conn_pool = r2d2::Pool::builder()
             .build(connection_mgr)
@@ -142,7 +149,32 @@ pub mod test_utils {
             db_conn_pool,
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
-            http_client: reqwest::Client::new(),
+            http_client: MockHttpClient::new(|_, _| false),
+        }
+    }
+
+    pub fn test_context_with_http_client<HttpClient>(
+        key_manager: InMemoryKeyManager,
+        http_client: HttpClient,
+    ) -> AppContext<HttpClient> {
+        let connection_mgr = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let db_conn_pool = r2d2::Pool::builder()
+            .build(connection_mgr)
+            .expect("Failed to create SQLite connection pool.");
+
+        {
+            let conn = db_conn_pool.get().unwrap();
+            embedded_migrations::run(&conn).unwrap();
+        }
+
+        let state = generate_state();
+
+        AppContext {
+            key_manager: Arc::new(key_manager),
+            db_conn_pool,
+            listen: "127.0.0.1:10000".parse().unwrap(),
+            validator_state: state,
+            http_client,
         }
     }
 }
