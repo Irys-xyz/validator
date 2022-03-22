@@ -17,7 +17,10 @@ use routes::get_tx::get_tx;
 use routes::index::index;
 use routes::post_tx::post_tx;
 
-use crate::{key_manager, server::routes::sign::sign_route, state::ValidatorStateAccess};
+use crate::{
+    database::queries::QueryContext, key_manager, server::routes::sign::sign_route,
+    state::ValidatorStateAccess,
+};
 
 #[cfg(feature = "test-routes")]
 use crate::server::routes::test::set_state;
@@ -33,6 +36,7 @@ where
     Context: RuntimeContext
         + routes::sign::Config<KeyManager>
         + ValidatorStateAccess
+        + QueryContext
         + Clone
         + Send
         + 'static,

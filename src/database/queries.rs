@@ -9,13 +9,14 @@ use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
 use crate::state::ValidatorStateAccess;
 
-pub trait RequestContext: ValidatorStateAccess {
+pub trait QueryContext: ValidatorStateAccess {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
+    fn current_epoch(&self) -> i64;
 }
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
 where
-    Context: RequestContext,
+    Context: QueryContext,
 {
     let conn = ctx.get_db_connection();
     bundle.filter(bundle::id.eq(b_id)).first::<Bundle>(&conn)
@@ -23,7 +24,7 @@ where
 
 pub fn insert_bundle_in_db<Context>(ctx: &Context, new_bundle: NewBundle) -> std::io::Result<()>
 where
-    Context: RequestContext,
+    Context: QueryContext,
 {
     let conn = ctx.get_db_connection();
     diesel::insert_into(bundle::table)
@@ -36,7 +37,7 @@ where
 
 pub fn insert_tx_in_db<Context>(ctx: &Context, new_tx: &NewTransaction) -> std::io::Result<()>
 where
-    Context: RequestContext,
+    Context: QueryContext,
 {
     let conn = ctx.get_db_connection();
     diesel::insert_into(transactions::table)
@@ -49,7 +50,7 @@ where
 
 pub async fn update_tx<Context>(ctx: &Context, tx: &NewTransaction) -> std::io::Result<()>
 where
-    Context: RequestContext,
+    Context: QueryContext,
 {
     let conn = ctx.get_db_connection();
     diesel::update(transactions::table.find(&tx.id))
@@ -63,7 +64,7 @@ where
 // TODO: implement the database verification correctly
 pub async fn get_tx<Context>(ctx: &Context, tx_id: &String) -> Result<Transaction, Error>
 where
-    Context: RequestContext,
+    Context: QueryContext,
 {
     let conn = ctx.get_db_connection();
     transactions
@@ -73,7 +74,7 @@ where
 
 pub async fn get_unposted_txs<Context>(ctx: &Context) -> Result<Vec<Transaction>, Error>
 where
-    Context: RequestContext,
+    Context: QueryContext,
 {
     let conn = ctx.get_db_connection();
     transactions

@@ -13,7 +13,7 @@ mod state;
 mod types;
 
 use clap::Parser;
-use cron::run_crons;
+use cron::{arweave::ArweaveContext, run_crons};
 use database::queries;
 use diesel::{
     r2d2::{self, ConnectionManager, PooledConnection},
@@ -79,6 +79,7 @@ pub struct AppContext {
     redis_connection_url: String,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
+    client: reqwest::Client,
 }
 
 impl InMemoryKeyManagerConfig for (JsonWebKey, JsonWebKey) {
@@ -130,15 +131,20 @@ impl AppContext {
             redis_connection_url: config.redis_connection_url.clone(),
             listen: config.listen,
             validator_state: state,
+            client: reqwest::Client::new(),
         }
     }
 }
 
-impl queries::RequestContext for AppContext {
+impl queries::QueryContext for AppContext {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
         self.db_conn_pool
             .get()
             .expect("Failed to get connection from database connection pool")
+    }
+
+    fn current_epoch(&self) -> i64 {
+        0
     }
 }
 
@@ -183,6 +189,12 @@ impl server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppContext {
 impl ValidatorStateAccess for AppContext {
     fn get_validator_state(&self) -> &SharedValidatorState {
         &self.validator_state
+    }
+}
+
+impl ArweaveContext for AppContext {
+    fn get_client(&self) -> reqwest::Client {
+        self.client.clone()
     }
 }
 
@@ -235,6 +247,7 @@ pub mod test_utils {
             redis_connection_url: "".to_string(),
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
+            client: reqwest::Client::new(),
         }
     }
 }
