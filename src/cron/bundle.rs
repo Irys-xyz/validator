@@ -1,9 +1,10 @@
 extern crate diesel;
 
+use super::arweave;
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
-use crate::cron::arweave::arweave::{Arweave, Transaction as ArweaveTx};
+use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
 use crate::types::Validator;
@@ -48,11 +49,11 @@ pub async fn validate_bundler<Context>(
     bundler: Bundler,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext,
+    Context: queries::RequestContext + arweave::ArweaveContext,
 {
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
     let txs_req = arweave
-        .get_latest_transactions(&bundler.address, Some(50), None)
+        .get_latest_transactions::<Context>(&bundler.address, Some(50), None, ctx)
         .await;
 
     if let Err(r) = txs_req {
@@ -96,10 +97,10 @@ async fn validate_bundle<Context>(
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext,
+    Context: queries::RequestContext + arweave::ArweaveContext,
 {
     let block_ok = check_bundle_block(ctx, bundler, bundle).await;
-    let mut current_block: Option<i64> = None;
+    let current_block: Option<i64> = None;
     if let Err(err) = block_ok {
         return Err(err);
     }
@@ -107,7 +108,7 @@ where
         return Ok(());
     }
 
-    let path = match arweave.get_tx_data(&bundle.id).await {
+    let path = match arweave.get_tx_data::<Context>(&bundle.id, ctx).await {
         Ok(path) => path,
         Err(err) => {
             error!("File path error {:?}", err);

@@ -2,12 +2,13 @@ use crate::database::queries;
 use crate::state::ValidatorRole;
 use std::sync::Arc;
 
+use super::arweave;
 use super::bundle::{get_bundler, validate_bundler};
 use super::error::ValidatorCronError;
 
 pub async fn validate<Context>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
 where
-    Context: queries::RequestContext,
+    Context: queries::RequestContext + arweave::ArweaveContext,
 {
     let bundler = get_bundler().await?;
 

@@ -13,7 +13,7 @@ mod state;
 mod types;
 
 use clap::Parser;
-use cron::run_crons;
+use cron::{arweave::ArweaveContext, run_crons};
 use database::queries;
 use diesel::{
     r2d2::{self, ConnectionManager, PooledConnection},
@@ -79,6 +79,7 @@ pub struct AppContext {
     redis_connection_url: String,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
+    client: reqwest::Client,
 }
 
 impl InMemoryKeyManagerConfig for (JsonWebKey, JsonWebKey) {
@@ -130,6 +131,7 @@ impl AppContext {
             redis_connection_url: config.redis_connection_url.clone(),
             listen: config.listen,
             validator_state: state,
+            client: reqwest::Client::new(),
         }
     }
 }
@@ -186,6 +188,12 @@ impl ValidatorStateAccess for AppContext {
     }
 }
 
+impl ArweaveContext for AppContext {
+    fn get_client(&self) -> reqwest::Client {
+        self.client.clone()
+    }
+}
+
 #[actix_web::main]
 async fn main() -> () {
     dotenv::dotenv().ok();
@@ -235,6 +243,7 @@ pub mod test_utils {
             redis_connection_url: "".to_string(),
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
+            client: reqwest::Client::new(),
         }
     }
 }
