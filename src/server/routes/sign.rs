@@ -89,7 +89,12 @@ impl SignRequest {
             DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
             DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
             DeepHashChunk::Chunk(self.id.as_bytes().to_owned().into()),
-            DeepHashChunk::Chunk(bundler_address.into()),
+            DeepHashChunk::Chunk(self.size.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.fee.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.currency.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.block.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(self.validator.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(bundler_address.as_bytes().to_owned().into()),
         ]))
         .await
         .map_err(|err| {
@@ -212,7 +217,6 @@ mod tests {
     use crate::{
         consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
         key_manager::{test_utils::test_keys, KeyManager},
-        server::routes::sign::sign_route,
     };
 
     use super::SignRequest;
@@ -289,7 +293,12 @@ mod tests {
             DeepHashChunk::Chunk(VALIDATOR_AS_BUFFER.into()),
             DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
             DeepHashChunk::Chunk(msg.id.into()),
-            DeepHashChunk::Chunk(bundler_address.into()),
+            DeepHashChunk::Chunk(msg.size.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(msg.fee.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(msg.currency.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(msg.block.to_string().as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(msg.validator.as_bytes().to_owned().into()),
+            DeepHashChunk::Chunk(bundler_address.as_bytes().to_owned().into()),
         ]))
         .unwrap();
 
