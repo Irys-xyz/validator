@@ -25,6 +25,8 @@ use server::{run_server, RuntimeContext};
 use state::{generate_state, SharedValidatorState, ValidatorStateAccess};
 use std::{fs, net::SocketAddr, sync::Arc};
 
+embed_migrations!();
+
 #[derive(Clone, Debug, Parser)]
 struct AppConfig {
     /// Do not start cron jobs
@@ -118,6 +120,10 @@ impl AppContext {
             .build(connection_mgr)
             .expect("Failed to create SQLite connection pool.");
 
+        if &config.database_url == ":memory:" {
+            embedded_migrations::run(&pool.get().unwrap()).unwrap();
+        }
+
         Self {
             key_manager: Arc::new(key_manager),
             db_conn_pool: pool,
@@ -202,13 +208,13 @@ async fn main() -> () {
 pub mod test_utils {
     use std::sync::Arc;
 
-    use crate::{key_manager::InMemoryKeyManager, state::generate_state, AppContext};
+    use crate::{
+        embedded_migrations, key_manager::InMemoryKeyManager, state::generate_state, AppContext,
+    };
     use diesel::{
         r2d2::{self, ConnectionManager},
         SqliteConnection,
     };
-
-    embed_migrations!();
 
     pub fn test_context(key_manager: InMemoryKeyManager) -> AppContext {
         let connection_mgr = ConnectionManager::<SqliteConnection>::new(":memory:");
@@ -218,7 +224,7 @@ pub mod test_utils {
 
         {
             let conn = db_conn_pool.get().unwrap();
-            embedded_migrations::run(&conn);
+            embedded_migrations::run(&conn).unwrap();
         }
 
         let state = generate_state();
