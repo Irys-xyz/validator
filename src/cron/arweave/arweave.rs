@@ -138,17 +138,6 @@ impl Arweave {
         }
     }
 
-    pub async fn get_tx(&self, transaction_id: &str) -> reqwest::Result<Transaction> {
-        let client = reqwest::Client::new();
-        let request = client
-            .get(format!("{}/tx/{}", self.get_host(), transaction_id))
-            .send()
-            .await
-            .unwrap();
-        let transaction = request.json::<Transaction>().await;
-        transaction
-    }
-
     pub async fn get_tx_data(&self, transaction_id: &str) -> reqwest::Result<String> {
         info!("Downloading bundle {} content", &transaction_id);
         let raw_path = format!("./bundles/{}", transaction_id);
@@ -179,39 +168,6 @@ impl Arweave {
         }
 
         Err(response.error_for_status().err().unwrap())
-    }
-
-    #[warn(dead_code)]
-    pub async fn get_tx_block(&self, transaction_id: &str) -> reqwest::Result<BlockInfo> {
-        let client = reqwest::Client::new();
-        let request = client
-            .get(format!("{}/tx/{}/status", self.get_host(), transaction_id))
-            .send()
-            .await?;
-
-        let status = request.json::<TransactionStatus>().await?;
-        let block_hash = status.block_indep_hash;
-
-        let request = client
-            .get(format!("{}/block/hash/{}", self.get_host(), block_hash))
-            .send()
-            .await?;
-
-        request.json::<BlockInfo>().await
-    }
-
-    #[warn(dead_code)]
-    pub async fn get_network_info(&self) -> NetworkInfo {
-        let client = reqwest::Client::new();
-        let info = client
-            .get(format!("{}/info", self.get_host()))
-            .send()
-            .await
-            .unwrap()
-            .json::<NetworkInfo>()
-            .await
-            .unwrap();
-        info
     }
 
     pub async fn get_latest_transactions(
