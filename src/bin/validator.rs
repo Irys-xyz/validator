@@ -30,10 +30,6 @@ struct AppConfig {
     #[clap(long, env, default_value = "postgres://bundlr:bundlr@127.0.0.1/bundlr")]
     database_url: String,
 
-    /// Redis connection URL
-    #[clap(long, env, default_value = "redis://127.0.0.1")]
-    redis_connection_url: String,
-
     /// Listen address for the server
     #[clap(short, long, env, default_value = "127.0.0.1:10000")]
     listen: SocketAddr,
@@ -109,7 +105,6 @@ impl From<&AppConfig> for AppContext {
         Self::new(
             key_manager,
             pool,
-            config.redis_connection_url.clone(),
             config.listen,
             state,
             reqwest::Client::new(),
