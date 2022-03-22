@@ -7,7 +7,7 @@ use crate::{
         schema::transactions::dsl::*,
     },
     key_manager,
-    server::{error::ValidatorServerError, RuntimeContext},
+    server::error::ValidatorServerError,
     state::ValidatorRole,
 };
 use actix_web::{
@@ -17,6 +17,7 @@ use actix_web::{
 use bundlr_sdk::{deep_hash::DeepHashChunk, deep_hash_sync::deep_hash_sync};
 use bytes::Bytes;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use paris::error;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -118,6 +119,9 @@ where
     };
     match insert_tx_in_db(ctx, &tx) {
         Ok(_) => Ok(()),
-        Err(err) => Err(ValidatorServerError::InternalError),
+        Err(err) => {
+            error!("Insert TX in database failed: {:?}", err);
+            Err(ValidatorServerError::InternalError)
+        }
     }
 }
