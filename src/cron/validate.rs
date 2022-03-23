@@ -16,7 +16,6 @@ where
 
     match ctx.get_validator_state().role() {
         ValidatorRole::Cosigner => validate_bundler(&*ctx, bundler).await?,
-        ValidatorRole::Leader => (),
         ValidatorRole::Idle => (),
     }
 
