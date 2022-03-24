@@ -3,14 +3,10 @@ use crate::{
     state::{ValidatorRole, ValidatorStateAccess},
 };
 use actix_web::{
-    error::PayloadError,
     web::{Data, Json},
-    HttpMessage, HttpRequest, HttpResponse,
+    HttpResponse,
 };
-use bytes::{Bytes, BytesMut};
-use futures_util::stream::StreamExt;
-use paris::{error, info};
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{de, Deserialize, Deserializer};
 
 /// Deserializer from string to u128
 fn de_optional_u128<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u128>, D::Error> {
@@ -62,15 +58,14 @@ mod tests {
         middleware::Logger,
         test::{call_service, init_service, TestRequest},
         web::{self, Data},
-        App, HttpResponse,
+        App,
     };
     use reqwest::StatusCode;
 
     use crate::{
+        context::{test_utils::test_context, AppContext},
         server::routes::test::set_state,
         state::{ValidatorRole, ValidatorStateAccess},
-        test_utils::test_context,
-        AppContext,
     };
 
     use super::Request;

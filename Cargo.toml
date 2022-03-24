@@ -1,5 +1,5 @@
 [package]
-name = "validator-rust"
+name = "validator"
 version = "0.1.0"
 edition = "2021"
 default-run = "validator"
@@ -7,39 +7,39 @@ default-run = "validator"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-rt = "2.5.0"
 actix-web = "4.0.0-beta.15"
+anyhow = "1.0"
+async-stream = "0.3.2"
+avro-rs = "0.13.0"
+awc = "3.0.0-beta.14"
+base64 = "0.13.0"
+bb8 = "0.7.1"
+bigint = "4.4.3"
+bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "feature/bundler-validation" }
+bytes = "1.1.0"
 clap = { version = "3.1.2", features = ["derive", "env"] }
+dashmap = "5.0.0"
+data-encoding = { version = "2.3.2", features = [ "alloc" ] }
+derive_more = "0.99.17"
+diesel = { version = "1.4.8", features = [ "sqlite", "r2d2", "numeric" ] }
+diesel_migrations = "1.4.0"
+dotenv = "0.15.0"
+env_logger = "0.9.0"
+futures = "0.3.19"
+futures-util = "0.3"
+indexmap = { version = "1.6.2", features = ["serde-1"] }
+jsonwebkey = "0.3.4"
+reqwest = { version = "0.11.9", features = ["blocking", "json", "stream"], optional = true}
+lazy_static = "1.4.0"
+num-traits = "0.2.14"
+once_cell = "1.9.0"
+openssl = "0.10.38"
+paris = { version = "1.5.8", features = ["timestamps", "macros"] }
 serde = "1.0.132"
 serde_json = "1.0.73"
 tokio = { version = "1.15.0", features = ["full"] }
-bytes = "1.1.0"
-derive_more = "0.99.17"
-paris = { version = "1.5.8", features = ["timestamps", "macros"] }
-data-encoding = { version = "2.3.2", features = [ "alloc" ] }
-dotenv = "0.15.0"
 tracing = "0.1.29"
-env_logger = "0.9.0"
-openssl = "0.10.38"
-actix-rt = "2.5.0"
-awc = "3.0.0-beta.14"
-futures = "0.3.19"
-bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "feature/bundler-validation" }
-num-traits = "0.2.14"
-avro-rs = "0.13.0"
-async-stream = "0.3.2"
-diesel = { version = "1.4.8", features = [ "sqlite", "r2d2", "numeric" ] }
-diesel_migrations = "1.4.0"
-bigint = "4.4.3"
-lazy_static = "1.4.0"
-bb8 = "0.7.1"
-jsonwebkey = "0.3.4"
-dashmap = "5.0.0"
-reqwest = { version = "0.11.9", features = ["blocking", "json", "stream"], optional = true}
-base64 = "0.13.0"
-once_cell = "1.9.0"
-indexmap = { version = "1.6.2", features = ["serde-1"] }
-anyhow = "1.0"
-futures-util = "0.3"
 
 [dev-dependencies]
 http = "0.2.6" # This is really needed only for mock version of the reqwest
@@ -57,16 +57,12 @@ test-routes = []
 
 [[bin]]
 name = "validator"
-path = "src/main.rs"
+path = "src/bin/validator.rs"
 
 [[bin]]
 name = "wallet-tool"
-path = "src/wallet_tool.rs"
-test = false
-bench = false
+path = "src/bin/wallet_tool.rs"
 
 [[bin]]
 name = "message-builder"
-path = "src/message_builder.rs"
-test = false
-bench = false
+path = "src/bin/message_builder.rs"

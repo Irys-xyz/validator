@@ -1,9 +1,13 @@
 use std::sync::RwLock;
 
 use crate::{
-    database::schema::transactions::dsl::*,
+    database::{
+        models::NewTransaction,
+        queries::{insert_tx_in_db, QueryContext},
+        schema::transactions::dsl::*,
+    },
     key_manager,
-    server::{error::ValidatorServerError, RuntimeContext},
+    server::error::ValidatorServerError,
     state::ValidatorRole,
 };
 use actix_web::{
@@ -13,6 +17,7 @@ use actix_web::{
 use bundlr_sdk::{deep_hash::DeepHashChunk, deep_hash_sync::deep_hash_sync};
 use bytes::Bytes;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use paris::error;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -39,7 +44,7 @@ pub async fn post_tx<Context, KeyManager>(
     validators: Data<RwLock<Vec<String>>>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where
-    Context: super::sign::Config<KeyManager> + RuntimeContext + 'static,
+    Context: super::sign::Config<KeyManager> + QueryContext + 'static,
     KeyManager: key_manager::KeyManager + Clone + Send + 'static,
 {
     if ctx.get_validator_state().role() != ValidatorRole::Leader {
@@ -84,7 +89,7 @@ where
         return Ok(HttpResponse::BadRequest().finish());
     };
 
-    add_to_db(&body).await?;
+    add_to_db(ctx.as_ref(), &body).await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -98,6 +103,25 @@ fn deep_hash_body(body: &PostTxBody) -> Result<Bytes, ValidatorServerError> {
     .map_err(|_| ValidatorServerError::InternalError)
 }
 
-async fn add_to_db(_body: &PostTxBody) -> Result<(), ValidatorServerError> {
-    Ok(())
+async fn add_to_db<Config>(ctx: &Config, body: &PostTxBody) -> Result<(), ValidatorServerError>
+where
+    Config: QueryContext + 'static,
+{
+    let tx = NewTransaction {
+        id: body.id.clone(),
+        epoch: ctx.current_epoch(),
+        block_promised: body.block,
+        block_actual: None,
+        signature: body.signature.as_bytes().to_vec(),
+        validated: true,
+        bundle_id: None,
+        sent_to_leader: false,
+    };
+    match insert_tx_in_db(ctx, &tx) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            error!("Insert TX in database failed: {:?}", err);
+            Err(ValidatorServerError::InternalError)
+        }
+    }
 }
