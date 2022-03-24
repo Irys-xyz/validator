@@ -62,9 +62,6 @@ pub struct Transaction {
     pub recipient: Option<String>,
     pub tags: Vec<Tag>,
     pub block: Option<BlockInfo>,
-    pub fee: Fee,
-    pub quantity: Fee,
-    pub data: TransactionData,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -193,7 +190,7 @@ impl Arweave {
     where
         Context: ArweaveContext,
     {
-        let raw_query = "query($owners: [String!], $first: Int) { t ransactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } fee { winston } quantity { winston } data { size type } } } } }";
+        let raw_query = "query($owners: [String!], $first: Int) { transactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } } } } }";
         let raw_variables = format!(
             "{{\"owners\": [\"{}\"], \"first\": {}, \"after\": {}}}",
             owner,
