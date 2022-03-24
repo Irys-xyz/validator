@@ -5,13 +5,12 @@ use bundlr_sdk::{
     deep_hash_sync::deep_hash_sync,
 };
 use clap::Parser;
-use consts::BUNDLR_AS_BUFFER;
 use data_encoding::BASE64URL_NOPAD;
 use jsonwebkey::JsonWebKey;
 use openssl::{hash::MessageDigest, rsa::Padding, sign};
 
-mod consts;
-mod key_manager;
+use validator::consts::BUNDLR_AS_BUFFER;
+use validator::key_manager;
 
 #[derive(Clone, Debug, Parser)]
 struct Args {

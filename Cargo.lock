@@ -2575,7 +2575,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "validator-rust"
+name = "validator"
 version = "0.1.0"
 dependencies = [
  "actix-rt",

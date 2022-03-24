@@ -228,11 +228,10 @@ mod tests {
 
     use crate::{
         consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
+        context::{test_utils::test_context, AppContext},
         key_manager::{test_utils::test_keys, KeyManager},
         server::routes::sign::{sign_route, Config},
         state::ValidatorStateAccess,
-        test_utils::test_context,
-        AppContext,
     };
 
     use super::SignRequest;

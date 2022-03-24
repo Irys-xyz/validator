@@ -1,5 +1,5 @@
-mod error;
-pub(crate) mod routes;
+pub mod error;
+pub mod routes;
 
 use std::net::SocketAddr;
 
@@ -28,7 +28,6 @@ use crate::server::routes::test::set_state;
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
-    fn redis_connection_url(&self) -> &str;
 }
 
 pub async fn run_server<Context, KeyManager>(ctx: Context) -> std::io::Result<()>
@@ -72,34 +71,4 @@ where
     .bind(ctx.bind_address())?
     .run()
     .await
-}
-
-#[cfg(test)]
-pub mod test_utils {
-    use actix_web::{
-        web::{self, Data},
-        App,
-    };
-
-    use crate::{key_manager, state::ValidatorStateAccess};
-
-    use super::{
-        routes::{
-            self, get_tx::get_tx, index::index, post_tx::post_tx, sign::sign_route, test::set_state,
-        },
-        RuntimeContext,
-    };
-
-    fn create_test_app<Context, KeyManager, T>(runtime_context: Context) -> App<T>
-    where
-        Context: RuntimeContext
-            + routes::sign::Config<KeyManager>
-            + ValidatorStateAccess
-            + Clone
-            + Send
-            + 'static,
-        KeyManager: key_manager::KeyManager + Clone + Send + 'static,
-    {
-        todo!()
-    }
 }

@@ -4,8 +4,7 @@ use clap::{Parser, Subcommand};
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPrivate, RsaPublic};
 use openssl::rsa::Rsa;
 
-mod consts;
-mod key_manager;
+use validator::key_manager;
 
 #[derive(Subcommand)]
 enum Command {
