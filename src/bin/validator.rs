@@ -7,6 +7,7 @@ use diesel::{
     sqlite::SqliteConnection,
 };
 use diesel_migrations::embed_migrations;
+use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use std::{fs, net::SocketAddr};
 
@@ -115,6 +116,8 @@ impl From<&AppConfig> for AppContext {
 #[actix_web::main]
 async fn main() -> () {
     dotenv::dotenv().ok();
+
+    env_logger::init_from_env(Env::default().default_filter_or("info"));
 
     let config = AppConfig::parse();
     let ctx = AppContext::from(&config);

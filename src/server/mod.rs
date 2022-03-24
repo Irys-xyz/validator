@@ -41,8 +41,6 @@ where
         + 'static,
     KeyManager: key_manager::KeyManager + Clone + Send + 'static,
 {
-    env_logger::init();
-
     info!("Starting up HTTP server...");
 
     let runtime_context = ctx.clone();
