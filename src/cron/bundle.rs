@@ -7,6 +7,7 @@ use super::transactions::get_transactions;
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
+use crate::http::reqwest::ReqwestClient;
 use crate::types::Validator;
 use awc::Client;
 use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
@@ -49,7 +50,7 @@ pub async fn validate_bundler<Context>(
     bundler: Bundler,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext,
+    Context: queries::QueryContext + arweave::ArweaveContext<ReqwestClient>,
 {
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
     let txs_req = arweave
@@ -97,7 +98,7 @@ async fn validate_bundle<Context>(
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext,
+    Context: queries::QueryContext + arweave::ArweaveContext<ReqwestClient>,
 {
     let block_ok = check_bundle_block(ctx, bundler, bundle).await;
     let current_block: Option<i64> = None;
@@ -108,7 +109,7 @@ where
         return Ok(());
     }
 
-    let path = match arweave.get_tx_data::<Context>(ctx, &bundle.id).await {
+    let path = match arweave.get_tx_data::<Context, ReqwestClient>(ctx, &bundle.id).await {
         Ok(path) => path,
         Err(err) => {
             error!("File path error {:?}", err);

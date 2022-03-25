@@ -11,7 +11,7 @@ use crate::{
     database::queries,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager},
     server::{self, RuntimeContext},
-    state::{SharedValidatorState, ValidatorStateAccess},
+    state::{SharedValidatorState, ValidatorStateAccess}, http::reqwest::ReqwestClient,
 };
 
 struct Keys(JsonWebKey, JsonWebKey);
@@ -105,8 +105,8 @@ impl ValidatorStateAccess for AppContext {
     }
 }
 
-impl ArweaveContext for AppContext {
-    fn get_client(&self) -> reqwest::Client {
+impl ArweaveContext<ReqwestClient> for AppContext {
+    fn get_client(&self) -> ReqwestClient {
         self.http_client.clone()
     }
 }

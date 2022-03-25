@@ -7,10 +7,11 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
 
-use futures_util::StreamExt;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+
+use crate::http::{ Client, reqwest::ReqwestClient };
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -124,8 +125,8 @@ pub struct ReqBody {
     pub variables: GqlVariables,
 }
 
-pub trait ArweaveContext {
-    fn get_client(&self) -> reqwest::Client;
+pub trait ArweaveContext<HttpClient> where HttpClient: Client {
+    fn get_client(&self) -> HttpClient;
 }
 
 #[warn(dead_code)]
@@ -141,25 +142,27 @@ impl Arweave {
         }
     }
 
-    pub async fn get_tx_data<Context>(
+    pub async fn get_tx_data<Context, HttpClient>(
         &self,
         ctx: &Context,
         transaction_id: &str,
     ) -> reqwest::Result<String>
     where
-        Context: ArweaveContext,
+        Context: ArweaveContext<HttpClient>,
+        HttpClient: Client
     {
         info!("Downloading bundle {} content", &transaction_id);
         let raw_path = format!("./bundles/{}", transaction_id);
         let file_path = Path::new(&raw_path);
         let mut buffer = File::create(&file_path).unwrap();
 
-        let host: String = format!("{}/{}", self.get_host(), transaction_id);
+        let host = reqwest::Url::parse(format!("{}/{}", self.get_host(), transaction_id).as_str()).unwrap();
+        let req : <reqwest::Client as Client>::Request = <reqwest::Client as Client>::Request::new(http::Method::GET, host);
 
-        let response = ctx.get_client().get(&host).send().await?;
-        if response.status().is_success() {
-            let mut stream = reqwest::get(&host).await?.bytes_stream();
-
+        let response = ctx.get_client().execute(req).await;
+        if response.is_ok() {
+            let mut stream = reqwest::get(host).await?.bytes_stream();
+ 
             while let Some(item) = stream.next().await {
                 if let Err(r) = item {
                     error!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
@@ -180,7 +183,7 @@ impl Arweave {
         Err(response.error_for_status().err().unwrap())
     }
 
-    pub async fn get_latest_transactions<Context>(
+    pub async fn get_latest_transactions<Context, HttpClient>(
         &self,
         ctx: &Context,
         owner: &str,
@@ -188,7 +191,8 @@ impl Arweave {
         after: Option<String>,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError>
     where
-        Context: ArweaveContext,
+        Context: ArweaveContext<HttpClient>,
+        HttpClient: Client
     {
         let raw_query = "query($owners: [String!], $first: Int) { transactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } } } } }";
         let raw_variables = format!(
@@ -209,9 +213,14 @@ impl Arweave {
         );
 
         let body = serde_json::from_str::<ReqBody>(&data);
+        /*let req = request::Builder::new()
+            .method(Method::POST)
+            .uri(http::uri::Uri::from_str(&url).unwrap())
+            .body(&body.unwrap())
+            .unwrap();
         let res = client.post(&url).json(&body.unwrap()).send().await;
         let status = res.as_ref().unwrap().status().as_u16();
-
+ 
         match status {
             200 => {
                 let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();
@@ -231,6 +240,9 @@ impl Arweave {
             504 => Err(ArweaveError::GatewayTimeout),
             _ => Err(ArweaveError::UnknownErr),
         }
+        */
+        let mut txs: Vec<Transaction> = Vec::<Transaction>::new();
+        Ok((txs, false, Some("end_cursor".to_owned())))
     }
 
     fn get_host(&self) -> String {

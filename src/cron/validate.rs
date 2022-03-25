@@ -1,4 +1,5 @@
 use crate::database::queries;
+use crate::http::reqwest::ReqwestClient;
 use crate::state::ValidatorRole;
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use super::error::ValidatorCronError;
 
 pub async fn validate<Context>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext,
+    Context: queries::QueryContext + arweave::ArweaveContext<ReqwestClient>,
 {
     let bundler = get_bundler().await?;
 
