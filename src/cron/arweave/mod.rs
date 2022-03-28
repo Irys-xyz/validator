@@ -6,11 +6,14 @@ use paris::info;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
+use std::str::FromStr;
 
 use futures_util::StreamExt;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+
+use crate::http::Client;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
@@ -124,8 +127,11 @@ pub struct ReqBody {
     pub variables: GqlVariables,
 }
 
-pub trait ArweaveContext {
-    fn get_client(&self) -> reqwest::Client;
+pub trait ArweaveContext<HttpClient>
+where
+    HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+{
+    fn get_client(&self) -> HttpClient;
 }
 
 #[warn(dead_code)]
@@ -141,13 +147,14 @@ impl Arweave {
         }
     }
 
-    pub async fn get_tx_data<Context>(
+    pub async fn get_tx_data<Context, HttpClient>(
         &self,
         ctx: &Context,
         transaction_id: &str,
     ) -> reqwest::Result<String>
     where
-        Context: ArweaveContext,
+        Context: ArweaveContext<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
     {
         info!("Downloading bundle {} content", &transaction_id);
         let raw_path = format!("./bundles/{}", transaction_id);
@@ -156,9 +163,15 @@ impl Arweave {
 
         let host: String = format!("{}/{}", self.get_host(), transaction_id);
 
-        let response = ctx.get_client().get(&host).send().await?;
-        if response.status().is_success() {
-            let mut stream = reqwest::get(&host).await?.bytes_stream();
+        let req: http::Request<String> = http::request::Builder::new()
+            .method(http::Method::GET)
+            .uri(http::uri::Uri::from_str(&host).unwrap())
+            .body("".to_string())
+            .unwrap();
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+        let res = ctx.get_client().execute(req).await.expect("request failed");
+        if res.status().is_success() {
+            let mut stream = res.bytes_stream();
 
             while let Some(item) = stream.next().await {
                 if let Err(r) = item {
@@ -175,12 +188,12 @@ impl Arweave {
             }
 
             return Ok(String::from(file_path.to_string_lossy()));
+        } else {
+            Err(res.error_for_status().err().unwrap())
         }
-
-        Err(response.error_for_status().err().unwrap())
     }
 
-    pub async fn get_latest_transactions<Context>(
+    pub async fn get_latest_transactions<Context, HttpClient>(
         &self,
         ctx: &Context,
         owner: &str,
@@ -188,7 +201,8 @@ impl Arweave {
         after: Option<String>,
     ) -> Result<(Vec<Transaction>, bool, Option<String>), ArweaveError>
     where
-        Context: ArweaveContext,
+        Context: ArweaveContext<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
     {
         let raw_query = "query($owners: [String!], $first: Int) { transactions(owners: $owners, first: $first) { pageInfo { hasNextPage } edges { cursor node { id owner { address } signature recipient tags { name value } block { height id timestamp } } } } }";
         let raw_variables = format!(
@@ -208,13 +222,16 @@ impl Arweave {
             raw_query, raw_variables
         );
 
-        let body = serde_json::from_str::<ReqBody>(&data);
-        let res = client.post(&url).json(&body.unwrap()).send().await;
-        let status = res.as_ref().unwrap().status().as_u16();
-
-        match status {
-            200 => {
-                let res = res.unwrap().json::<GraphqlQueryResponse>().await.unwrap();
+        let req: http::Request<String> = http::request::Builder::new()
+            .method(http::Method::POST)
+            .uri(http::uri::Uri::from_str(&url).unwrap())
+            .body(data)
+            .unwrap();
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+        let res = client.execute(req).await.unwrap();
+        match res.status() {
+            reqwest::StatusCode::OK => {
+                let res: GraphqlQueryResponse = res.json().await.unwrap();
                 let mut txs: Vec<Transaction> = Vec::<Transaction>::new();
                 let mut end_cursor: Option<String> = None;
                 for tx in &res.data.transactions.edges {
@@ -225,10 +242,10 @@ impl Arweave {
 
                 Ok((txs, has_next_page, end_cursor))
             }
-            400 => Err(ArweaveError::MalformedQuery),
-            404 => Err(ArweaveError::TxsNotFound),
-            500 => Err(ArweaveError::InternalServerError),
-            504 => Err(ArweaveError::GatewayTimeout),
+            reqwest::StatusCode::BAD_REQUEST => Err(ArweaveError::MalformedQuery),
+            reqwest::StatusCode::NOT_FOUND => Err(ArweaveError::TxsNotFound),
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR => Err(ArweaveError::InternalServerError),
+            reqwest::StatusCode::GATEWAY_TIMEOUT => Err(ArweaveError::GatewayTimeout),
             _ => Err(ArweaveError::UnknownErr),
         }
     }

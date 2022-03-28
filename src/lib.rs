@@ -8,6 +8,7 @@ pub mod consts;
 pub mod context;
 pub mod cron;
 pub mod database;
+pub mod http;
 pub mod key_manager;
 pub mod server;
 pub mod state;

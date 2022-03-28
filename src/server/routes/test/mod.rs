@@ -33,7 +33,6 @@ pub async fn set_state<Context>(
 where
     Context: ValidatorStateAccess,
 {
-    eprintln!("got req: {:?}", req);
     let state = ctx.get_validator_state();
 
     if let Some(epoch) = req.epoch {
@@ -60,10 +59,10 @@ mod tests {
         web::{self, Data},
         App,
     };
-    use reqwest::StatusCode;
 
     use crate::{
         context::{test_utils::test_context, AppContext},
+        http::reqwest::mock::MockHttpClient,
         server::routes::test::set_state,
         state::{ValidatorRole, ValidatorStateAccess},
     };
@@ -142,7 +141,7 @@ mod tests {
         let app = App::new()
             .wrap(Logger::default())
             .app_data(Data::new(ctx.clone()))
-            .route("/", web::post().to(set_state::<AppContext>));
+            .route("/", web::post().to(set_state::<AppContext<MockHttpClient>>));
 
         let app = init_service(app).await;
 
@@ -152,9 +151,8 @@ mod tests {
             .set_payload(r#"{"role":"cosigner"}"#)
             .to_request();
 
-        let resp = call_service(&app, req).await;
-
-        assert_eq!(resp.status(), StatusCode::OK);
+        let res = call_service(&app, req).await;
+        assert_eq!(res.status(), reqwest::StatusCode::OK);
         assert_eq!(ctx.get_validator_state().role(), ValidatorRole::Cosigner)
     }
 }
