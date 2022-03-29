@@ -142,7 +142,8 @@ impl Arweave {
             host,
             protocol: match &protocol[..] {
                 "http" => ArweaveProtocol::Http,
-                "https" | _ => ArweaveProtocol::Https,
+                "https" => ArweaveProtocol::Https,
+                _ => ArweaveProtocol::Https,
             },
         }
     }

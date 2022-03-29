@@ -1,6 +1,4 @@
-use std::pin::Pin;
-
-use futures::Future;
+use futures::future::BoxFuture;
 
 #[cfg(feature = "reqwest-client")]
 pub mod reqwest;
@@ -10,10 +8,7 @@ pub trait Client {
     type Response;
     type Error: std::fmt::Debug;
 
-    fn execute(
-        &self,
-        req: Self::Request,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    fn execute(&self, req: Self::Request) -> BoxFuture<Result<Self::Response, Self::Error>>;
 }
 
 #[cfg(test)]
@@ -22,6 +17,8 @@ pub mod mock {
         fmt,
         sync::{Arc, Mutex},
     };
+
+    use futures::future::BoxFuture;
 
     use super::Client;
 
@@ -126,17 +123,13 @@ pub mod mock {
     impl<Request, Response> Client for MockClient<Request, Response>
     where
         Request: fmt::Debug,
-        Response: 'static,
+        Response: Send + 'static,
     {
         type Request = Request;
         type Response = Response;
         type Error = MockHttpClientError;
 
-        fn execute(
-            &self,
-            req: Self::Request,
-        ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Self::Response, Self::Error>>>>
-        {
+        fn execute(&self, req: Self::Request) -> BoxFuture<Result<Self::Response, Self::Error>> {
             let mut state = self.state.lock().unwrap();
             let handler = state
                 .handlers
