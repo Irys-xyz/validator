@@ -238,7 +238,6 @@ where
                         signature: receipt.signature.as_bytes().to_vec(),
                         validated: true,
                         bundle_id: Some(bundle_tx.tx_id.clone()),
-                        sent_to_leader: false,
                     },
                 ) {
                     // FIXME: missing error handling

@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS transactions (
     signature BLOB NOT NULL,
     validated BOOLEAN NOT NULL,
     bundle_id CHAR(43),
-    sent_to_leader BOOLEAN NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (bundle_id) REFERENCES bundle(id)
 );

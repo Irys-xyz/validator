@@ -189,7 +189,6 @@ where
         signature: sig.as_bytes().to_vec(),
         validated: false,
         bundle_id: None,
-        sent_to_leader: false,
     };
 
     let conn = ctx.get_db_connection();

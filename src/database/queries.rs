@@ -71,14 +71,3 @@ where
         .filter(transactions::id.eq(tx_id))
         .first::<Transaction>(&conn)
 }
-
-pub async fn get_unposted_txs<Context>(ctx: &Context) -> Result<Vec<Transaction>, Error>
-where
-    Context: QueryContext,
-{
-    let conn = ctx.get_db_connection();
-    transactions
-        .filter(transactions::sent_to_leader.eq(false))
-        .limit(25)
-        .load::<Transaction>(&conn)
-}
