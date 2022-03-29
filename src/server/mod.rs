@@ -45,25 +45,31 @@ where
 
     let runtime_context = ctx.clone();
     HttpServer::new(move || {
-        let app = App::new()
-            .app_data(Data::new(runtime_context.clone()))
-            .wrap(Logger::default())
-            .route("/", web::get().to(index))
-            .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
-            .service(
-                web::scope("/cosigner")
-                    .route("/sign", web::post().to(sign_route::<Context, KeyManager>)),
-            )
-            .service(
-                web::scope("/leader").route("/tx", web::post().to(post_tx::<Context, KeyManager>)),
-            )
-            .service(web::scope("/idle").route("/", web::get().to(index)));
+        {
+            // use double braces to enable inner attributes
+            #![allow(clippy::let_and_return)]
 
-        #[cfg(feature = "test-routes")]
-        let app =
-            app.service(web::scope("/test").route("/state", web::post().to(set_state::<Context>)));
+            let app = App::new()
+                .app_data(Data::new(runtime_context.clone()))
+                .wrap(Logger::default())
+                .route("/", web::get().to(index))
+                .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
+                .service(
+                    web::scope("/cosigner")
+                        .route("/sign", web::post().to(sign_route::<Context, KeyManager>)),
+                )
+                .service(
+                    web::scope("/leader")
+                        .route("/tx", web::post().to(post_tx::<Context, KeyManager>)),
+                )
+                .service(web::scope("/idle").route("/", web::get().to(index)));
 
-        app
+            #[cfg(feature = "test-routes")]
+            let app = app
+                .service(web::scope("/test").route("/state", web::post().to(set_state::<Context>)));
+
+            app
+        }
     })
     .shutdown_timeout(5)
     .bind(ctx.bind_address())?
