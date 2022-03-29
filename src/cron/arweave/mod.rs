@@ -8,7 +8,6 @@ use serde::Serialize;
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use futures_util::StreamExt;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -168,11 +167,12 @@ impl Arweave {
             .uri(http::uri::Uri::from_str(&host).unwrap())
             .body("".to_string())
             .unwrap();
+
         let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
         let res = ctx.get_client().execute(req).await.expect("request failed");
         if res.status().is_success() {
             let mut stream = res.bytes_stream();
-
+            /*
             while let Some(item) = stream.next().await {
                 if let Err(r) = item {
                     error!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
@@ -186,7 +186,7 @@ impl Arweave {
                     }
                 }
             }
-
+            */
             return Ok(String::from(file_path.to_string_lossy()));
         } else {
             Err(res.error_for_status().err().unwrap())
@@ -216,19 +216,19 @@ impl Arweave {
         );
 
         let url = format!("{}/graphql?query={}", self.get_host(), raw_query);
-        let client = ctx.get_client();
         let data = format!(
             "{{\"query\":\"{}\",\"variables\":{}}}",
             raw_query, raw_variables
         );
 
-        let req: http::Request<String> = http::request::Builder::new()
-            .method(http::Method::POST)
-            .uri(http::uri::Uri::from_str(&url).unwrap())
-            .body(data)
-            .unwrap();
-        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+        let client = reqwest::Client::new();
+        let body = serde_json::from_str::<ReqBody>(&data);
+        let req = client.post(&url).json(&body.unwrap()).build().unwrap();
+        let client = ctx.get_client();
         let res = client.execute(req).await.unwrap();
+        dbg!(&res);
+        dbg!(&res.status());
+
         match res.status() {
             reqwest::StatusCode::OK => {
                 let res: GraphqlQueryResponse = res.json().await.unwrap();
@@ -265,4 +265,80 @@ impl Arweave {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::{
+        context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
+        key_manager::test_utils::test_keys,
+    };
+    use http::Method;
+    use reqwest::{Request, Response};
+
+    use super::Arweave;
+
+    #[actix_rt::test]
+    async fn get_latest_transactions_should_return_ok() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{
+                    \"data\": {
+                        \"transactions\": {
+                            \"pageInfo\": {
+                                \"hasNextPage\": true
+                            },
+                            \"edges\": [
+                                {
+                                    \"cursor\": \"WyIyMDIyLTAzLTI5VDAwOjAwOjE5LjQyNFoiLDFd\",
+                                    \"node\": {
+                                        \"id\": \"2J1SYrvy7uUd2gx-ws8X19E2wVCSDFwc-d3TvMeQLX4\",
+                                        \"owner\": {
+                                            \"address\": \"OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs\"
+                                        },
+                                        \"signature\": \"signature\",
+                                        \"recipient\": \"\",
+                                        \"tags\": [
+                                            {
+                                                \"name\": \"Application\",
+                                                \"value\": \"Bundlr\"
+                                            },
+                                            {
+                                                \"name\": \"Action\",
+                                                \"value\": \"Bundle\"
+                                            },
+                                            {
+                                                \"name\": \"Bundle-Format\",
+                                                \"value\": \"binary\"
+                                            },
+                                            {
+                                                \"name\": \"Bundle-Version\",
+                                                \"value\": \"2.0.0\"
+                                            }
+                                        ],
+                                        \"block\": null
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }";
+
+                let response = http::response::Builder::new()
+                    .status(200
+                    )
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let arweave = Arweave::new(80, String::from("example.com"), String::from("http"));
+        arweave
+            .get_latest_transactions(&ctx, "owner", None, None)
+            .await
+            .unwrap();
+    }
+}
