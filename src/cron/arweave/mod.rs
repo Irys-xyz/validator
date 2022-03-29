@@ -169,24 +169,18 @@ impl Arweave {
             .unwrap();
 
         let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-        let res = ctx.get_client().execute(req).await.expect("request failed");
+        let mut res: reqwest::Response =
+            ctx.get_client().execute(req).await.expect("request failed");
         if res.status().is_success() {
-            let mut stream = res.bytes_stream();
-            /*
-            while let Some(item) = stream.next().await {
-                if let Err(r) = item {
-                    error!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
-                    return Err(r);
-                } else {
-                    match buffer.write(&item.unwrap()) {
-                        Ok(_) => {}
-                        Err(err) => {
-                            error!("Error writing on file {:?}: {:?}", file_path.to_str(), err)
-                        }
+            while let Some(chunk) = res.chunk().await? {
+                println!("Chunk: {:?}", chunk);
+                match buffer.write(&chunk) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!("Error writing on file {:?}: {:?}", file_path.to_str(), err)
                     }
                 }
             }
-            */
             return Ok(String::from(file_path.to_string_lossy()));
         } else {
             Err(res.error_for_status().err().unwrap())
@@ -226,8 +220,6 @@ impl Arweave {
         let req = client.post(&url).json(&body.unwrap()).build().unwrap();
         let client = ctx.get_client();
         let res = client.execute(req).await.unwrap();
-        dbg!(&res);
-        dbg!(&res.status());
 
         match res.status() {
             reqwest::StatusCode::OK => {
@@ -266,6 +258,8 @@ impl Arweave {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
     use crate::{
         context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
         key_manager::test_utils::test_keys,
@@ -274,6 +268,39 @@ mod tests {
     use reqwest::{Request, Response};
 
     use super::Arweave;
+
+    #[actix_rt::test]
+    async fn get_tx_data_should_return_ok() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/tx_id";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "stream";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let arweave = Arweave::new(80, String::from("example.com"), String::from("http"));
+        arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
+
+        let raw_path = "./bundles/tx_id";
+        let file_path = Path::new(raw_path).is_file();
+        assert!(file_path);
+        match fs::remove_file(raw_path) {
+            Ok(_) => (),
+            Err(_) => println!(
+                "File {} not removed properly, please delete it manually",
+                raw_path
+            ),
+        }
+    }
 
     #[actix_rt::test]
     async fn get_latest_transactions_should_return_ok() {
@@ -291,32 +318,15 @@ mod tests {
                             },
                             \"edges\": [
                                 {
-                                    \"cursor\": \"WyIyMDIyLTAzLTI5VDAwOjAwOjE5LjQyNFoiLDFd\",
+                                    \"cursor\": \"cursor\",
                                     \"node\": {
-                                        \"id\": \"2J1SYrvy7uUd2gx-ws8X19E2wVCSDFwc-d3TvMeQLX4\",
+                                        \"id\": \"id\",
                                         \"owner\": {
-                                            \"address\": \"OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs\"
+                                            \"address\": \"address\"
                                         },
                                         \"signature\": \"signature\",
                                         \"recipient\": \"\",
-                                        \"tags\": [
-                                            {
-                                                \"name\": \"Application\",
-                                                \"value\": \"Bundlr\"
-                                            },
-                                            {
-                                                \"name\": \"Action\",
-                                                \"value\": \"Bundle\"
-                                            },
-                                            {
-                                                \"name\": \"Bundle-Format\",
-                                                \"value\": \"binary\"
-                                            },
-                                            {
-                                                \"name\": \"Bundle-Version\",
-                                                \"value\": \"2.0.0\"
-                                            }
-                                        ],
+                                        \"tags\": [],
                                         \"block\": null
                                     }
                                 }
@@ -326,8 +336,7 @@ mod tests {
                 }";
 
                 let response = http::response::Builder::new()
-                    .status(200
-                    )
+                    .status(200)
                     .body(data)
                     .unwrap();
                 Response::from(response)
