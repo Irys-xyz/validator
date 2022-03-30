@@ -14,7 +14,7 @@ pub trait QueryContext: ValidatorStateAccess {
     fn current_epoch(&self) -> i64;
 }
 
-pub fn get_bundle<Context>(ctx: &Context, b_id: &String) -> Result<Bundle, Error>
+pub fn get_bundle<Context>(ctx: &Context, b_id: &str) -> Result<Bundle, Error>
 where
     Context: QueryContext,
 {
@@ -62,7 +62,7 @@ where
 }
 
 // TODO: implement the database verification correctly
-pub async fn get_tx<Context>(ctx: &Context, tx_id: &String) -> Result<Transaction, Error>
+pub async fn get_tx<Context>(ctx: &Context, tx_id: &str) -> Result<Transaction, Error>
 where
     Context: QueryContext,
 {

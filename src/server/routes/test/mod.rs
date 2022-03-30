@@ -11,9 +11,7 @@ use serde::{de, Deserialize, Deserializer};
 /// Deserializer from string to u128
 fn de_optional_u128<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u128>, D::Error> {
     let s: &str = de::Deserialize::deserialize(deserializer)?;
-    s.parse()
-        .map(|v| Some(v))
-        .map_err(|err| de::Error::custom(err))
+    s.parse().map(Some).map_err(de::Error::custom)
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

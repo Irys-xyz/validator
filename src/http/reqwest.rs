@@ -1,3 +1,5 @@
+use futures::future::BoxFuture;
+
 #[derive(Clone)]
 pub struct ReqwestClient(reqwest::Client);
 
@@ -12,10 +14,7 @@ impl super::Client for ReqwestClient {
     type Response = reqwest::Response;
     type Error = reqwest::Error;
 
-    fn execute(
-        &self,
-        req: Self::Request,
-    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Self::Response, Self::Error>>>> {
+    fn execute(&self, req: Self::Request) -> BoxFuture<Result<Self::Response, Self::Error>> {
         Box::pin(self.0.execute(req))
     }
 }

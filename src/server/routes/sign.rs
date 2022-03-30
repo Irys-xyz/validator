@@ -31,7 +31,7 @@ where
 /// Deserializer from string to u128
 fn de_u128<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
     let s: &str = de::Deserialize::deserialize(deserializer)?;
-    s.parse().map_err(|err| de::Error::custom(err))
+    s.parse().map_err(de::Error::custom)
 }
 
 /// Serialize as string
@@ -151,7 +151,7 @@ where
     let current_block = ctx.current_block();
     let key_manager = ctx.key_manager();
 
-    if body.validator != ctx.validator_address().to_string() {
+    if body.validator != *ctx.validator_address() {
         return Ok(HttpResponse::BadRequest().body("Invalid validator address"));
     }
 
