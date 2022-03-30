@@ -34,6 +34,7 @@ pub struct AppContext<HttpClient = ReqwestClient> {
     listen: SocketAddr,
     validator_state: SharedValidatorState,
     http_client: HttpClient,
+    arweave_uri: String,
 }
 
 impl AppContext {
@@ -43,6 +44,7 @@ impl AppContext {
         listen: SocketAddr,
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
+        arweave_uri: String,
     ) -> Self {
         Self {
             key_manager: Arc::new(key_manager),
@@ -50,6 +52,7 @@ impl AppContext {
             listen,
             validator_state,
             http_client: ReqwestClient::new(http_client),
+            arweave_uri,
         }
     }
 }
@@ -114,6 +117,10 @@ where
     fn get_client(&self) -> HttpClient {
         self.http_client.clone()
     }
+
+    fn get_arweave_host(&self) -> String {
+        self.arweave_uri.clone()
+    }
 }
 
 #[cfg(test)]
@@ -150,6 +157,7 @@ pub mod test_utils {
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client: MockHttpClient::new(|_, _| false),
+            arweave_uri: "".to_string(),
         }
     }
 
@@ -175,6 +183,7 @@ pub mod test_utils {
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client,
+            arweave_uri: "http://example.com".to_string(),
         }
     }
 }

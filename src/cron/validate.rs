@@ -12,7 +12,7 @@ where
     Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let bundler = get_bundler().await?;
+    let bundler = get_bundler().unwrap();
 
     match ctx.get_validator_state().role() {
         ValidatorRole::Cosigner => validate_bundler(&*ctx, bundler).await?,
@@ -24,7 +24,7 @@ where
 }
 
 pub async fn validate_transactions<Context>(_: Arc<Context>) -> Result<(), ValidatorCronError> {
-    let bundler = get_bundler().await?;
+    let bundler = get_bundler().unwrap();
 
     super::bundle::validate_transactions(bundler).await?;
 

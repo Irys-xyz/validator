@@ -56,6 +56,9 @@ struct AppConfig {
     /// Path to JWK file holding validator private key
     #[clap(long, env = "VALIDATOR_KEY")]
     validator_key: String,
+
+    #[clap(long, env = "ARWEAVE_URI")]
+    arweave_uri: String,
 }
 
 struct Keys(JsonWebKey, JsonWebKey);
@@ -109,6 +112,7 @@ impl From<&AppConfig> for AppContext {
             config.listen,
             state,
             reqwest::Client::new(),
+            config.arweave_uri.clone(),
         )
     }
 }

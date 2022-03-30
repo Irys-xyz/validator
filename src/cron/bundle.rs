@@ -38,7 +38,7 @@ pub struct TxReceipt {
     signature: String,
 }
 
-pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
+pub fn get_bundler() -> Result<Bundler, ValidatorCronError> {
     Ok(Bundler {
         address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
         url: "https://node1.bundlr.network/".to_string(),
@@ -53,7 +53,7 @@ where
     Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
+    let arweave = Arweave::new(ctx.get_arweave_host());
     let txs_req = arweave
         .get_latest_transactions(ctx, &bundler.address, Some(50), None)
         .await;
@@ -76,7 +76,7 @@ where
                 ValidatorCronError::TxsFromAddressNotFound => todo!(),
                 ValidatorCronError::BundleNotInsertedInDB => todo!(),
                 ValidatorCronError::TxInvalid => todo!(),
-                ValidatorCronError::FileError => todo!(),
+                ValidatorCronError::FileError => (),
             }
         }
     }
@@ -103,10 +103,11 @@ where
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     let block_ok = check_bundle_block(ctx, bundler, bundle).await;
-    let current_block: Option<i64> = None;
     if let Err(err) = block_ok {
         return Err(err);
     }
+
+    let current_block = block_ok.unwrap();
     if current_block.is_none() {
         return Ok(());
     }
@@ -139,6 +140,7 @@ where
             return Err(ValidatorCronError::TxInvalid);
         }
     }
+    info!("All transactions ok in bundle {}", &bundle.id);
 
     match std::fs::remove_file(path.clone()) {
         Ok(_r) => info!("Successfully deleted {}", path),
@@ -247,7 +249,7 @@ where
                 // TODO: vote slash
             }
         }
-        None => todo!(),
+        None => (),
     }
 
     Ok(())
@@ -334,4 +336,86 @@ pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCron
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
+        key_manager::test_utils::test_keys,
+    };
+    use http::Method;
+    use reqwest::{Request, Response};
+
+    use super::{get_bundler, validate_bundler};
+
+    #[actix_rt::test]
+    async fn validate_bundler_should_abort_due_no_block() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\",\"recipient\": \"\", \"tags\": [], \"block\": null } } ] } } }";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            })
+            .when(|req: &Request| {
+                let url = "http://example.com/tx_id";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let bundler = get_bundler().unwrap();
+        let res = validate_bundler(&ctx, bundler).await;
+        assert!(res.is_ok())
+    }
+
+    #[actix_rt::test]
+    async fn validate_bundler_should_return_ok() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\", \"recipient\": \"\", \"tags\": [], \"block\": { \"id\": \"id\", \"timestamp\": 10, \"height\": 10 } } } ] } } }";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            })
+            .when(|req: &Request| {
+                let url = "http://example.com/tx_id";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let bundler = get_bundler().unwrap();
+        let res = validate_bundler(&ctx, bundler).await;
+        assert!(res.is_ok())
+    }
 }

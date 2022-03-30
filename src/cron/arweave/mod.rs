@@ -109,8 +109,6 @@ pub enum ArweaveProtocol {
 #[derive(Clone)]
 pub struct Arweave {
     pub host: String,
-    pub port: u16,
-    pub protocol: ArweaveProtocol,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -131,20 +129,13 @@ where
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     fn get_client(&self) -> HttpClient;
+    fn get_arweave_host(&self) -> String;
 }
 
 #[warn(dead_code)]
 impl Arweave {
-    pub fn new(port: u16, host: String, protocol: String) -> Arweave {
-        Arweave {
-            port,
-            host,
-            protocol: match &protocol[..] {
-                "http" => ArweaveProtocol::Http,
-                "https" => ArweaveProtocol::Https,
-                _ => ArweaveProtocol::Https,
-            },
-        }
+    pub fn new(host: String) -> Arweave {
+        Arweave { host }
     }
 
     pub async fn get_tx_data<Context, HttpClient>(
@@ -174,7 +165,6 @@ impl Arweave {
             ctx.get_client().execute(req).await.expect("request failed");
         if res.status().is_success() {
             while let Some(chunk) = res.chunk().await? {
-                println!("Chunk: {:?}", chunk);
                 match buffer.write(&chunk) {
                     Ok(_) => {}
                     Err(err) => {
@@ -244,16 +234,7 @@ impl Arweave {
     }
 
     fn get_host(&self) -> String {
-        let protocol = match self.protocol {
-            ArweaveProtocol::Http => "http",
-            ArweaveProtocol::Https => "https",
-        };
-
-        if self.port == 80 {
-            format!("{}://{}", protocol, self.host)
-        } else {
-            format!("{}://{}:{}", protocol, self.host, self.port)
-        }
+        self.host.clone()
     }
 }
 
@@ -262,8 +243,8 @@ mod tests {
     use std::{fs, path::Path};
 
     use crate::{
-        context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
-        key_manager::test_utils::test_keys,
+        context::test_utils::test_context_with_http_client, cron::arweave::ArweaveContext,
+        http::reqwest::mock::MockHttpClient, key_manager::test_utils::test_keys,
     };
     use http::Method;
     use reqwest::{Request, Response};
@@ -288,7 +269,7 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let arweave = Arweave::new(80, String::from("example.com"), String::from("http"));
+        let arweave = Arweave::new(ctx.get_arweave_host());
         arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
 
         let raw_path = "./bundles/tx_id";
@@ -311,31 +292,7 @@ mod tests {
                 req.method() == Method::POST && &req.url().to_string() == url
             })
             .then(|_: &Request| {
-                let data = "{
-                    \"data\": {
-                        \"transactions\": {
-                            \"pageInfo\": {
-                                \"hasNextPage\": true
-                            },
-                            \"edges\": [
-                                {
-                                    \"cursor\": \"cursor\",
-                                    \"node\": {
-                                        \"id\": \"id\",
-                                        \"owner\": {
-                                            \"address\": \"address\"
-                                        },
-                                        \"signature\": \"signature\",
-                                        \"recipient\": \"\",
-                                        \"tags\": [],
-                                        \"block\": null
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }";
-
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\",\"recipient\": \"\", \"tags\": [], \"block\": null } } ] } } }";
                 let response = http::response::Builder::new()
                     .status(200)
                     .body(data)
@@ -345,7 +302,7 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let arweave = Arweave::new(80, String::from("example.com"), String::from("http"));
+        let arweave = Arweave::new(ctx.get_arweave_host());
         arweave
             .get_latest_transactions(&ctx, "owner", None, None)
             .await
