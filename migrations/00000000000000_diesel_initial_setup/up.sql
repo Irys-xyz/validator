@@ -38,15 +38,15 @@
 CREATE TABLE IF NOT EXISTS bundle (
     id CHAR(43) NOT NULL,
     owner_address CHAR(43) NOT NULL,
-    block_height BIGINT NOT NULL,
+    block_height BINARY(16) NOT NULL,
     PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
     id CHAR(43) NOT NULL,
     epoch BINARY(16) NOT NULL,
-    block_promised BIGINT NOT NULL,
-    block_actual BIGINT,
+    block_promised BINARY(16) NOT NULL,
+    block_actual BINARY(16),
     signature BLOB NOT NULL,
     validated BOOLEAN NOT NULL,
     bundle_id CHAR(43),

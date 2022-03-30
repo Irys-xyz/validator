@@ -187,7 +187,7 @@ where
     let new_transaction = NewTransaction {
         id: body.id,
         epoch: Epoch(current_epoch),
-        block_promised: i64::try_from(body.block).unwrap(), // FIXME: don't unwrap
+        block_promised: body.block.into(),
         block_actual: None,
         signature: sig.as_bytes().to_vec(),
         validated: false,

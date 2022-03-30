@@ -17,7 +17,7 @@ pub enum DeserializationError {
     InvalidByteLength(usize, usize),
 }
 
-#[derive(Clone, Copy, Debug, Serialize, FromSqlRow, AsExpression, PartialEq)]
+#[derive(AsExpression, Clone, Copy, Debug, FromSqlRow, PartialEq, Serialize)]
 #[diesel(foreigh_type)]
 #[sql_type = "Binary"]
 pub struct Epoch(pub u128);
@@ -56,11 +56,62 @@ impl ToSql<Binary, Sqlite> for Epoch {
     }
 }
 
+#[derive(AsExpression, Clone, Copy, Debug, FromSqlRow, PartialEq, Serialize)]
+#[diesel(foreigh_type)]
+#[sql_type = "Binary"]
+pub struct Block(pub u128);
+
+impl TryFrom<&[u8]> for Block {
+    type Error = DeserializationError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        if bytes.len() == 16 {
+            let mut b: [u8; 16] = [0; 16];
+            b.copy_from_slice(bytes);
+            Ok(Self(u128::from_ne_bytes(b)))
+        } else {
+            Err(DeserializationError::InvalidByteLength(16, bytes.len()))
+        }
+    }
+}
+
+impl From<u128> for Block {
+    fn from(val: u128) -> Self {
+        Block(val)
+    }
+}
+
+impl From<Block> for u128 {
+    fn from(val: Block) -> Self {
+        val.0
+    }
+}
+
+impl FromSql<Binary, Sqlite> for Block {
+    fn from_sql(
+        bytes: Option<&<Sqlite as diesel::backend::Backend>::RawValue>,
+    ) -> diesel::deserialize::Result<Self> {
+        let bytes = bytes.ok_or_else(|| Box::new(DeserializationError::UnexpectedNull))?;
+        let bytes = bytes.read_blob();
+        Block::try_from(bytes).map_err(|err| Box::new(err).into())
+    }
+}
+
+impl ToSql<Binary, Sqlite> for Block {
+    fn to_sql<W: std::io::Write>(
+        &self,
+        out: &mut diesel::serialize::Output<W, Sqlite>,
+    ) -> diesel::serialize::Result {
+        let bytes: [u8; 16] = self.0.to_ne_bytes();
+        out.write(&bytes).map(|_| IsNull::No).map_err(Into::into)
+    }
+}
+
 #[derive(Serialize, Queryable)]
 pub struct Bundle {
     pub id: String,
     pub owner_address: String,
-    pub block_height: i64,
+    pub block_height: Block,
 }
 
 #[derive(Insertable, Clone)]
@@ -68,15 +119,15 @@ pub struct Bundle {
 pub struct NewBundle {
     pub id: String,
     pub owner_address: String,
-    pub block_height: i64,
+    pub block_height: Block,
 }
 
 #[derive(Debug, PartialEq, Serialize, Queryable)]
 pub struct Transaction {
     pub id: String,
     pub epoch: Epoch,
-    pub block_promised: i64,
-    pub block_actual: Option<i64>,
+    pub block_promised: Block,
+    pub block_actual: Option<Block>,
     pub signature: Vec<u8>,
     pub validated: bool,
     pub bundle_id: Option<String>,
@@ -87,8 +138,8 @@ pub struct Transaction {
 pub struct NewTransaction {
     pub id: String,
     pub epoch: Epoch,
-    pub block_promised: i64,
-    pub block_actual: Option<i64>,
+    pub block_promised: Block,
+    pub block_actual: Option<Block>,
     pub signature: Vec<u8>,
     pub validated: bool,
     pub bundle_id: Option<String>,
@@ -100,7 +151,7 @@ mod tests {
 
     use crate::database::schema::transactions::dsl;
 
-    use super::{Epoch, NewTransaction, Transaction};
+    use super::{Block, Epoch, NewTransaction, Transaction};
 
     embed_migrations!();
 
@@ -112,7 +163,7 @@ mod tests {
         let tx = NewTransaction {
             id: "foo".to_string(),
             epoch: Epoch(340282366920938463463374607431768211455),
-            block_promised: 1,
+            block_promised: Block(340282366920938463463374607431768211454),
             block_actual: None,
             signature: "foo".as_bytes().to_vec(),
             validated: false,
@@ -131,7 +182,7 @@ mod tests {
             Transaction {
                 id: "foo".to_string(),
                 epoch: Epoch(340282366920938463463374607431768211455),
-                block_promised: 1,
+                block_promised: Block(340282366920938463463374607431768211454),
                 block_actual: None,
                 signature: "foo".as_bytes().to_vec(),
                 validated: false,
