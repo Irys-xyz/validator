@@ -15,7 +15,7 @@ table! {
 table! {
     transactions (id) {
         id -> Text,
-        epoch -> BigInt,
+        epoch -> Binary,
         block_promised -> BigInt,
         block_actual -> Nullable<BigInt>,
         signature -> Binary,

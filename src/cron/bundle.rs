@@ -5,7 +5,7 @@ use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
-use crate::database::models::{NewBundle, NewTransaction};
+use crate::database::models::{Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
 use crate::http;
 use crate::types::Validator;
@@ -232,7 +232,7 @@ where
                     ctx,
                     &NewTransaction {
                         id: receipt.tx_id,
-                        epoch: 0, // TODO: implement epoch correctly
+                        epoch: Epoch(0),
                         block_promised: receipt.block.try_into().unwrap(), // FIXME: don't use unwrap
                         block_actual: current_block,
                         signature: receipt.signature.as_bytes().to_vec(),

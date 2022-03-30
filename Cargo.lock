@@ -2642,6 +2642,7 @@ dependencies = [
  "reqwest",
  "serde 1.0.133",
  "serde_json 1.0.75",
+ "thiserror",
  "tokio",
  "tracing",
  "url 0.2.38",

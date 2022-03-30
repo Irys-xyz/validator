@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS bundle (
 
 CREATE TABLE IF NOT EXISTS transactions (
     id CHAR(43) NOT NULL,
-    epoch BIGINT NOT NULL,
+    epoch BINARY(16) NOT NULL,
     block_promised BIGINT NOT NULL,
     block_actual BIGINT,
     signature BLOB NOT NULL,
