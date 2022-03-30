@@ -24,7 +24,7 @@ where
     fn bundler_address(&self) -> &str;
     fn validator_address(&self) -> &str;
     fn key_manager(&self) -> &KeyManager;
-    fn current_epoch(&self) -> i64;
+    fn current_epoch(&self) -> u128;
     fn current_block(&self) -> u128;
 }
 
@@ -183,7 +183,7 @@ where
 
     let new_transaction = NewTransaction {
         id: body.id,
-        epoch: current_epoch,
+        epoch: current_epoch.try_into().unwrap(), // FIXME: don't unwrap
         block_promised: i64::try_from(body.block).unwrap(), // FIXME: don't unwrap
         block_actual: None,
         signature: sig.as_bytes().to_vec(),

@@ -61,7 +61,7 @@ impl<HttpClient> queries::QueryContext for AppContext<HttpClient> {
             .expect("Failed to get connection from database connection pool")
     }
 
-    fn current_epoch(&self) -> i64 {
+    fn current_epoch(&self) -> u128 {
         0
     }
 }
@@ -87,7 +87,7 @@ impl<HttpClient> server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppCo
         self.key_manager.validator_address()
     }
 
-    fn current_epoch(&self) -> i64 {
+    fn current_epoch(&self) -> u128 {
         0
     }
 
