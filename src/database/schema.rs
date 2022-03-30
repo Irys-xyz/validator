@@ -21,7 +21,6 @@ table! {
         signature -> Binary,
         validated -> Bool,
         bundle_id -> Nullable<Text>,
-        sent_to_leader -> Bool,
     }
 }
 

@@ -2,7 +2,6 @@ pub mod arweave;
 mod bundle;
 mod contract;
 mod error;
-mod leader;
 mod slasher;
 mod transactions;
 mod validate;
@@ -30,12 +29,6 @@ where
             validate::validate_transactions,
             30
         ),
-        create_cron(
-            &ctx,
-            "send transactions to leader",
-            leader::send_txs_to_leader,
-            60
-        )
     );
 }
 
