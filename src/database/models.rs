@@ -147,7 +147,7 @@ pub struct NewTransaction {
 
 #[cfg(test)]
 mod tests {
-    use diesel::{Connection, RunQueryDsl, SqliteConnection};
+    use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection};
 
     use crate::database::schema::transactions::dsl;
 
@@ -188,6 +188,186 @@ mod tests {
                 validated: false,
                 bundle_id: None,
             }
+        )
+    }
+
+    #[test]
+    fn select_by_epoch() {
+        let conn = SqliteConnection::establish(":memory:").unwrap();
+        embedded_migrations::run(&conn).unwrap();
+
+        [
+            NewTransaction {
+                id: "foo1".to_string(),
+                epoch: Epoch(1),
+                block_promised: Block(10),
+                block_actual: None,
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+            NewTransaction {
+                id: "foo2".to_string(),
+                epoch: Epoch(2),
+                block_promised: Block(20),
+                block_actual: None,
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+            NewTransaction {
+                id: "foo3".to_string(),
+                epoch: Epoch(1),
+                block_promised: Block(10),
+                block_actual: Some(Block(9)),
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+            NewTransaction {
+                id: "foo4".to_string(),
+                epoch: Epoch(2),
+                block_promised: Block(20),
+                block_actual: None,
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+        ]
+        .iter()
+        .for_each(|tx| {
+            diesel::insert_into(dsl::transactions)
+                .values(tx)
+                .execute(&conn)
+                .unwrap();
+        });
+
+        let result = dsl::transactions
+            .filter(dsl::epoch.eq(Epoch(1)))
+            .load::<Transaction>(&conn)
+            .unwrap();
+
+        assert_eq!(
+            result,
+            [
+                Transaction {
+                    id: "foo1".to_string(),
+                    epoch: Epoch(1),
+                    block_promised: Block(10),
+                    block_actual: None,
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+                Transaction {
+                    id: "foo3".to_string(),
+                    epoch: Epoch(1),
+                    block_promised: Block(10),
+                    block_actual: Some(Block(9)),
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                }
+            ]
+        )
+    }
+
+    #[test]
+    fn sort_by_epoch() {
+        let conn = SqliteConnection::establish(":memory:").unwrap();
+        embedded_migrations::run(&conn).unwrap();
+
+        [
+            NewTransaction {
+                id: "foo1".to_string(),
+                epoch: Epoch(1),
+                block_promised: Block(10),
+                block_actual: None,
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+            NewTransaction {
+                id: "foo2".to_string(),
+                epoch: Epoch(2),
+                block_promised: Block(20),
+                block_actual: None,
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+            NewTransaction {
+                id: "foo3".to_string(),
+                epoch: Epoch(1),
+                block_promised: Block(10),
+                block_actual: Some(Block(9)),
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+            NewTransaction {
+                id: "foo4".to_string(),
+                epoch: Epoch(2),
+                block_promised: Block(20),
+                block_actual: None,
+                signature: "foo".as_bytes().to_vec(),
+                validated: false,
+                bundle_id: None,
+            },
+        ]
+        .iter()
+        .for_each(|tx| {
+            diesel::insert_into(dsl::transactions)
+                .values(tx)
+                .execute(&conn)
+                .unwrap();
+        });
+
+        let result = dsl::transactions
+            .order_by(dsl::epoch)
+            .load::<Transaction>(&conn)
+            .unwrap();
+
+        assert_eq!(
+            result,
+            [
+                Transaction {
+                    id: "foo1".to_string(),
+                    epoch: Epoch(1),
+                    block_promised: Block(10),
+                    block_actual: None,
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+                Transaction {
+                    id: "foo3".to_string(),
+                    epoch: Epoch(1),
+                    block_promised: Block(10),
+                    block_actual: Some(Block(9)),
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+                Transaction {
+                    id: "foo2".to_string(),
+                    epoch: Epoch(2),
+                    block_promised: Block(20),
+                    block_actual: None,
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+                Transaction {
+                    id: "foo4".to_string(),
+                    epoch: Epoch(2),
+                    block_promised: Block(20),
+                    block_actual: None,
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+            ]
         )
     }
 }
