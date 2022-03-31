@@ -5,15 +5,20 @@ use diesel::{
     SqliteConnection,
 };
 use jsonwebkey::JsonWebKey;
+use url::Url;
 
 use crate::{
-    cron::arweave::ArweaveContext,
+    cron::{arweave::ArweaveContext, Bundler},
     database::queries,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager},
     server::{self, RuntimeContext},
     state::{SharedValidatorState, ValidatorStateAccess},
 };
+
+pub trait BundlerAccess {
+    fn bundler(&self) -> &Bundler;
+}
 
 struct Keys(JsonWebKey, JsonWebKey);
 
@@ -34,6 +39,7 @@ pub struct AppContext<HttpClient = ReqwestClient> {
     listen: SocketAddr,
     validator_state: SharedValidatorState,
     http_client: HttpClient,
+    bundler_connection: Bundler,
 }
 
 impl AppContext {
@@ -43,14 +49,26 @@ impl AppContext {
         listen: SocketAddr,
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
+        bundler_url: &Url,
     ) -> Self {
+        let bundler_connection = Bundler {
+            address: key_manager.bundler_address().to_owned(),
+            url: bundler_url.to_string(),
+        };
         Self {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
             listen,
             validator_state,
             http_client: ReqwestClient::new(http_client),
+            bundler_connection,
         }
+    }
+}
+
+impl<HttpClient> BundlerAccess for AppContext<HttpClient> {
+    fn bundler(&self) -> &Bundler {
+        &self.bundler_connection
     }
 }
 
@@ -122,7 +140,10 @@ pub mod test_utils {
 
     use super::AppContext;
     use crate::{
-        http::reqwest::mock::MockHttpClient, key_manager::InMemoryKeyManager, state::generate_state,
+        cron::Bundler,
+        http::reqwest::mock::MockHttpClient,
+        key_manager::{InMemoryKeyManager, KeyManager},
+        state::generate_state,
     };
     use diesel::{
         r2d2::{self, ConnectionManager},
@@ -144,12 +165,18 @@ pub mod test_utils {
 
         let state = generate_state();
 
+        let bundler_connection = Bundler {
+            address: key_manager.bundler_address().to_owned(),
+            url: "".to_string(),
+        };
+
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client: MockHttpClient::new(|_, _| false),
+            bundler_connection,
         }
     }
 
@@ -169,12 +196,18 @@ pub mod test_utils {
 
         let state = generate_state();
 
+        let bundler_connection = Bundler {
+            address: key_manager.bundler_address().to_owned(),
+            url: "".to_string(),
+        };
+
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client,
+            bundler_connection,
         }
     }
 }

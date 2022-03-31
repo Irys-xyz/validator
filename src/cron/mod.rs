@@ -6,17 +6,22 @@ mod slasher;
 mod transactions;
 mod validate;
 
-use crate::{database::queries, http};
+use crate::{context, database::queries, http};
 use futures::{join, Future};
 use paris::{error, info};
 use std::{sync::Arc, time::Duration};
 
 use self::error::ValidatorCronError;
 
+pub use bundle::Bundler;
+
 // Update contract state
 pub async fn run_crons<Context, HttpClient>(ctx: Context)
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + Clone,
+    Context: queries::QueryContext
+        + arweave::ArweaveContext<HttpClient>
+        + context::BundlerAccess
+        + Clone,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     info!("Validator starting ...");
@@ -32,14 +37,14 @@ where
     );
 }
 
-async fn create_cron<'a, Context, F>(
+async fn create_cron<Context, F>(
     ctx: &Context,
-    description: &'a str,
+    description: &str,
     f: impl Fn(Arc<Context>) -> F,
     sleep: u64,
 ) where
-    Context: Clone + 'a,
-    F: Future<Output = Result<(), ValidatorCronError>> + 'a,
+    Context: Clone,
+    F: Future<Output = Result<(), ValidatorCronError>>,
 {
     let ctx = Arc::new(ctx.clone());
     loop {
