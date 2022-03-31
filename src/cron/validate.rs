@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::database::queries;
 use crate::state::ValidatorRole;
 use crate::{context, http};
@@ -8,7 +6,7 @@ use super::arweave;
 use super::bundle::validate_bundler;
 use super::error::ValidatorCronError;
 
-pub async fn validate<Context, HttpClient>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
+pub async fn validate<Context, HttpClient>(ctx: &Context) -> Result<(), ValidatorCronError>
 where
     Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + context::BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
@@ -21,7 +19,7 @@ where
     Ok(())
 }
 
-pub async fn validate_transactions<Context>(ctx: Arc<Context>) -> Result<(), ValidatorCronError>
+pub async fn validate_transactions<Context>(ctx: &Context) -> Result<(), ValidatorCronError>
 where
     Context: context::BundlerAccess,
 {
