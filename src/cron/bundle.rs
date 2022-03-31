@@ -67,8 +67,8 @@ where
     }
 
     let txs_req = &txs_req.unwrap().0;
-    for bundle_tx in txs_req {
-        let res = validate_bundle(ctx, &arweave, &bundler, bundle_tx).await;
+    for bundle in txs_req {
+        let res = validate_bundle(ctx, &arweave, bundle).await;
         if let Err(err) = res {
             match err {
                 ValidatorCronError::TxNotFound => todo!(),
@@ -81,28 +81,19 @@ where
         }
     }
 
-    // If no - sad - OK
-
-    // If yes - check that block_seeded == block_expected -
-
-    // If valid - return
-
-    // If not - vote to slash... once vote is confirmed then tell all peers to check
-
     Ok(())
 }
 
 async fn validate_bundle<Context, HttpClient>(
     ctx: &Context,
     arweave: &Arweave,
-    bundler: &Bundler,
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
     Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let block_ok = check_bundle_block(ctx, bundler, bundle).await;
+    let block_ok = check_bundle_block(bundle);
     if let Err(err) = block_ok {
         return Err(err);
     }
@@ -110,6 +101,8 @@ where
     let current_block = block_ok.unwrap();
     if current_block.is_none() {
         return Ok(());
+    } else {
+        let _store = store_bundle(ctx, bundle);
     }
 
     let path = match arweave.get_tx_data(ctx, &bundle.id).await {
@@ -142,51 +135,49 @@ where
     }
     info!("All transactions ok in bundle {}", &bundle.id);
 
+    /*
     match std::fs::remove_file(path.clone()) {
         Ok(_r) => info!("Successfully deleted {}", path),
         Err(err) => error!("Error deleting file {} : {}", path, err),
     };
+    */
 
     Ok(())
 }
 
-async fn check_bundle_block<Context>(
-    ctx: &Context,
-    bundler: &Bundler,
-    bundle: &ArweaveTx,
-) -> Result<Option<i64>, ValidatorCronError>
-where
-    Context: queries::QueryContext,
-{
+fn check_bundle_block(bundle: &ArweaveTx) -> Result<Option<i64>, ValidatorCronError> {
     let current_block = match bundle.block {
         Some(ref block) => block
             .height
             .to_i64()
             .expect("Could not convert block number from u128 to i64"),
         None => {
-            info!(
-                "Bundle {} not included in any block, moving on ...",
-                &bundle.id
-            );
+            info!("Bundle {} not included in any block", &bundle.id);
             return Ok(None);
         }
     };
 
     info!("Bundle {} included in block {}", &bundle.id, current_block);
-    let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
+    Ok(Some(current_block))
+}
 
+fn store_bundle<Context>(ctx: &Context, bundle: &ArweaveTx) -> Result<(), ValidatorCronError>
+where
+    Context: queries::QueryContext,
+{
+    let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
     if !is_bundle_present {
         return match insert_bundle_in_db(
             ctx,
             NewBundle {
                 id: bundle.id.clone(),
-                owner_address: bundler.address.clone(),
-                block_height: current_block,
+                owner_address: bundle.owner.address.clone(),
+                block_height: bundle.block.as_ref().unwrap().height as i64,
             },
         ) {
             Ok(()) => {
                 info!("Bundle {} successfully stored", &bundle.id);
-                Ok(Some(current_block))
+                Ok(())
             }
             Err(err) => {
                 error!("Error when storing bundle {} : {}", &bundle.id, err);
@@ -195,7 +186,7 @@ where
         };
     }
 
-    Ok(Some(current_block))
+    Ok(())
 }
 
 async fn verify_bundle_tx<Context>(
@@ -249,7 +240,10 @@ where
                 // TODO: vote slash
             }
         }
-        None => (),
+        None => {
+            // TODO: handle unfound txreceipt
+            ()
+        }
     }
 
     Ok(())
@@ -340,6 +334,11 @@ pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCron
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        fs::{self, File},
+        io::Read,
+    };
+
     use crate::{
         context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
         key_manager::test_utils::test_keys,
@@ -392,7 +391,7 @@ mod tests {
                 req.method() == Method::POST && &req.url().to_string() == url
             })
             .then(|_: &Request| {
-                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\", \"recipient\": \"\", \"tags\": [], \"block\": { \"id\": \"id\", \"timestamp\": 10, \"height\": 10 } } } ] } } }";
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"test_bundle\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\", \"recipient\": \"\", \"tags\": [], \"block\": { \"id\": \"id\", \"timestamp\": 10, \"height\": 10 } } } ] } } }";
                 let response = http::response::Builder::new()
                     .status(200)
                     .body(data)
@@ -400,14 +399,18 @@ mod tests {
                 Response::from(response)
             })
             .when(|req: &Request| {
-                let url = "http://example.com/tx_id";
+                let url = "http://example.com/test_bundle";
                 req.method() == Method::GET && &req.url().to_string() == url
             })
             .then(|_: &Request| {
-                let data = "";
+                let mut test_bundle = String::new();
+                let mut f = File::open("./bundles/test_bundle").expect("Unable to open test_bundle");
+                f.read_to_string(&mut test_bundle).expect("Unable to read string");
+
+                dbg!(&test_bundle);
                 let response = http::response::Builder::new()
                     .status(200)
-                    .body(data)
+                    .body(test_bundle)
                     .unwrap();
                 Response::from(response)
             });

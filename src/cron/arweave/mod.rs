@@ -35,7 +35,7 @@ pub struct Tag {
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct Owner {
-    address: String,
+    pub address: String,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
