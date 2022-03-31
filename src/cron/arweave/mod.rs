@@ -6,11 +6,11 @@ use paris::info;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
-use std::str::FromStr;
 
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::str::FromStr;
 
 use crate::http::Client;
 
@@ -108,7 +108,7 @@ pub enum ArweaveProtocol {
 
 #[derive(Clone)]
 pub struct Arweave {
-    pub host: String,
+    pub uri: http::uri::Uri,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -129,13 +129,13 @@ where
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     fn get_client(&self) -> HttpClient;
-    fn get_arweave_host(&self) -> String;
+    fn get_arweave_uri(&self) -> &http::uri::Uri;
 }
 
 #[warn(dead_code)]
 impl Arweave {
-    pub fn new(host: String) -> Arweave {
-        Arweave { host }
+    pub fn new(uri: &http::uri::Uri) -> Arweave {
+        Arweave { uri: uri.clone() }
     }
 
     pub async fn get_tx_data<Context, HttpClient>(
@@ -152,11 +152,12 @@ impl Arweave {
         let file_path = Path::new(&raw_path);
         let mut buffer = File::create(&file_path).unwrap();
 
-        let host: String = format!("{}/{}", self.get_host(), transaction_id);
-
+        let uri =
+            http::uri::Uri::from_str(&format!("{}{}", self.get_host(), transaction_id).to_string())
+                .unwrap();
         let req: http::Request<String> = http::request::Builder::new()
             .method(http::Method::GET)
-            .uri(http::uri::Uri::from_str(&host).unwrap())
+            .uri(uri)
             .body("".to_string())
             .unwrap();
 
@@ -200,7 +201,7 @@ impl Arweave {
             }
         );
 
-        let url = format!("{}/graphql?query={}", self.get_host(), raw_query);
+        let uri = format!("{}graphql?query={}", self.get_host(), raw_query);
         let data = format!(
             "{{\"query\":\"{}\",\"variables\":{}}}",
             raw_query, raw_variables
@@ -208,7 +209,7 @@ impl Arweave {
 
         let client = reqwest::Client::new();
         let body = serde_json::from_str::<ReqBody>(&data);
-        let req = client.post(&url).json(&body.unwrap()).build().unwrap();
+        let req = client.post(&uri).json(&body.unwrap()).build().unwrap();
         let client = ctx.get_client();
         let res = client.execute(req).await.unwrap();
 
@@ -233,8 +234,8 @@ impl Arweave {
         }
     }
 
-    fn get_host(&self) -> String {
-        self.host.clone()
+    fn get_host(&self) -> http::uri::Uri {
+        self.uri.clone()
     }
 }
 
@@ -269,7 +270,7 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let arweave = Arweave::new(ctx.get_arweave_host());
+        let arweave = Arweave::new(ctx.get_arweave_uri());
         arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
 
         let raw_path = "./bundles/tx_id";
@@ -302,7 +303,7 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let arweave = Arweave::new(ctx.get_arweave_host());
+        let arweave = Arweave::new(ctx.get_arweave_uri());
         arweave
             .get_latest_transactions(&ctx, "owner", None, None)
             .await

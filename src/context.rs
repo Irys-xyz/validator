@@ -34,7 +34,7 @@ pub struct AppContext<HttpClient = ReqwestClient> {
     listen: SocketAddr,
     validator_state: SharedValidatorState,
     http_client: HttpClient,
-    arweave_uri: String,
+    arweave_uri: http::uri::Uri,
 }
 
 impl AppContext {
@@ -44,7 +44,7 @@ impl AppContext {
         listen: SocketAddr,
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
-        arweave_uri: String,
+        arweave_uri: http::uri::Uri,
     ) -> Self {
         Self {
             key_manager: Arc::new(key_manager),
@@ -118,14 +118,14 @@ where
         self.http_client.clone()
     }
 
-    fn get_arweave_host(&self) -> String {
-        self.arweave_uri.clone()
+    fn get_arweave_uri(&self) -> &http::uri::Uri {
+        &self.arweave_uri
     }
 }
 
 #[cfg(test)]
 pub mod test_utils {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
     use super::AppContext;
     use crate::{
@@ -157,7 +157,7 @@ pub mod test_utils {
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client: MockHttpClient::new(|_, _| false),
-            arweave_uri: "".to_string(),
+            arweave_uri: http::uri::Uri::from_str(&"http://example.com".to_string()).unwrap(),
         }
     }
 
@@ -183,7 +183,7 @@ pub mod test_utils {
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client,
-            arweave_uri: "http://example.com".to_string(),
+            arweave_uri: http::uri::Uri::from_str(&"http://example.com".to_string()).unwrap(),
         }
     }
 }

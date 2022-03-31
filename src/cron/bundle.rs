@@ -53,7 +53,7 @@ where
     Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let arweave = Arweave::new(ctx.get_arweave_host());
+    let arweave = Arweave::new(ctx.get_arweave_uri());
     let txs_req = arweave
         .get_latest_transactions(ctx, &bundler.address, Some(50), None)
         .await;

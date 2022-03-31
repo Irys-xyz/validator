@@ -9,7 +9,7 @@ use diesel::{
 use diesel_migrations::embed_migrations;
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
-use std::{fs, net::SocketAddr};
+use std::{fs, net::SocketAddr, str::FromStr};
 
 use validator::key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig};
 use validator::{context::AppContext, state::generate_state};
@@ -106,13 +106,15 @@ impl From<&AppConfig> for AppContext {
             embedded_migrations::run(&pool.get().unwrap()).unwrap();
         }
 
+        let arweave_uri = http::uri::Uri::from_str(&config.arweave_uri).unwrap();
+
         Self::new(
             key_manager,
             pool,
             config.listen,
             state,
             reqwest::Client::new(),
-            config.arweave_uri.clone(),
+            arweave_uri,
         )
     }
 }
