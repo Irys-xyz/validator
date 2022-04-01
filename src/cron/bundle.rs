@@ -4,6 +4,7 @@ use super::arweave;
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
+use crate::context::BundlerAccess;
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
@@ -24,10 +25,10 @@ use openssl::sign;
 use paris::{error, info};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Bundler {
     pub address: String,
-    pub url: String,
+    pub url: String, // FIXME: type of this field should be Url
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -37,22 +38,13 @@ pub struct TxReceipt {
     signature: String,
 }
 
-pub async fn get_bundler() -> Result<Bundler, ValidatorCronError> {
-    Ok(Bundler {
-        address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
-        url: "https://node1.bundlr.network/".to_string(),
-    })
-}
-
-pub async fn validate_bundler<Context, HttpClient>(
-    ctx: &Context,
-    bundler: Bundler,
-) -> Result<(), ValidatorCronError>
+pub async fn validate_bundler<Context, HttpClient>(ctx: &Context) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
+    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
+    let bundler = ctx.bundler();
     let txs_req = arweave
         .get_latest_transactions(ctx, &bundler.address, Some(50), None)
         .await;
@@ -67,7 +59,7 @@ where
 
     let txs_req = &txs_req.unwrap().0;
     for bundle_tx in txs_req {
-        let res = validate_bundle(ctx, &arweave, &bundler, bundle_tx).await;
+        let res = validate_bundle(ctx, &arweave, bundle_tx).await;
         if let Err(err) = res {
             match err {
                 ValidatorCronError::TxNotFound => todo!(),
@@ -94,14 +86,13 @@ where
 async fn validate_bundle<Context, HttpClient>(
     ctx: &Context,
     arweave: &Arweave,
-    bundler: &Bundler,
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
+    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let block_ok = check_bundle_block(ctx, bundler, bundle).await;
+    let block_ok = check_bundle_block(ctx, bundle).await;
     let current_block: Option<u128> = None;
     if let Err(err) = block_ok {
         return Err(err);
@@ -149,11 +140,10 @@ where
 
 async fn check_bundle_block<Context>(
     ctx: &Context,
-    bundler: &Bundler,
     bundle: &ArweaveTx,
 ) -> Result<Option<u128>, ValidatorCronError>
 where
-    Context: queries::QueryContext,
+    Context: queries::QueryContext + BundlerAccess,
 {
     let current_block = match bundle.block {
         Some(ref block) => block.height,
@@ -174,7 +164,7 @@ where
             ctx,
             NewBundle {
                 id: bundle.id.clone(),
-                owner_address: bundler.address.clone(),
+                owner_address: ctx.bundler().address.clone(),
                 block_height: Block(current_block),
             },
         ) {
@@ -312,8 +302,8 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     Ok(verifier.verify(&sig).unwrap_or(false))
 }
 
-pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCronError> {
-    let res = get_transactions(&bundler, Some(100), None).await;
+pub async fn validate_transactions(bundler: &Bundler) -> Result<(), ValidatorCronError> {
+    let res = get_transactions(bundler, Some(100), None).await;
     let txs = match res {
         Ok(r) => r.0,
         Err(_) => Vec::new(),
@@ -324,7 +314,7 @@ pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCron
         let block_ok = tx.current_block < tx.expected_block;
 
         if block_ok {
-            let _res = vote_slash(&bundler);
+            let _res = vote_slash(bundler);
         }
     }
 
