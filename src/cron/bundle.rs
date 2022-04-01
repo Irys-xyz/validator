@@ -150,7 +150,11 @@ fn check_bundle_block(bundle: &ArweaveTx) -> Result<Option<u128>, ValidatorCronE
     Ok(Some(current_block))
 }
 
-fn store_bundle<Context>(ctx: &Context, bundle: &ArweaveTx, current_block: u128) -> Result<(), ValidatorCronError>
+fn store_bundle<Context>(
+    ctx: &Context,
+    bundle: &ArweaveTx,
+    current_block: u128,
+) -> Result<(), ValidatorCronError>
 where
     Context: queries::QueryContext + BundlerAccess,
 {
@@ -322,10 +326,7 @@ pub async fn validate_transactions(bundler: &Bundler) -> Result<(), ValidatorCro
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs::{self, File},
-        io::Read,
-    };
+    use std::{fs::File, io::Read};
 
     use crate::{
         context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
@@ -334,7 +335,7 @@ mod tests {
     use http::Method;
     use reqwest::{Request, Response};
 
-    use super::{validate_bundler};
+    use super::validate_bundler;
 
     #[actix_rt::test]
     async fn validate_bundler_should_abort_due_no_block() {
@@ -366,8 +367,7 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let bundler = get_bundler().unwrap();
-        let res = validate_bundler(&ctx, bundler).await;
+        let res = validate_bundler(&ctx).await;
         assert!(res.is_ok())
     }
 
@@ -405,8 +405,7 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let bundler = get_bundler().unwrap();
-        let res = validate_bundler(&ctx, bundler).await;
+        let res = validate_bundler(&ctx).await;
         assert!(res.is_ok())
     }
 }
