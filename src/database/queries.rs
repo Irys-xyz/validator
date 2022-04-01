@@ -11,7 +11,7 @@ use crate::state::ValidatorStateAccess;
 
 pub trait QueryContext: ValidatorStateAccess {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
-    fn current_epoch(&self) -> i64;
+    fn current_epoch(&self) -> u128;
 }
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &str) -> Result<Bundle, Error>
@@ -70,15 +70,4 @@ where
     transactions
         .filter(transactions::id.eq(tx_id))
         .first::<Transaction>(&conn)
-}
-
-pub async fn get_unposted_txs<Context>(ctx: &Context) -> Result<Vec<Transaction>, Error>
-where
-    Context: QueryContext,
-{
-    let conn = ctx.get_db_connection();
-    transactions
-        .filter(transactions::sent_to_leader.eq(false))
-        .limit(25)
-        .load::<Transaction>(&conn)
 }

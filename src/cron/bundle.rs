@@ -4,8 +4,9 @@ use super::arweave;
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
+use crate::context::BundlerAccess;
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
-use crate::database::models::{NewBundle, NewTransaction};
+use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
 use crate::http;
 use crate::types::Validator;
@@ -17,7 +18,6 @@ use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
 use jsonwebkey::JsonWebKey;
 use lazy_static::lazy_static;
-use num_traits::ToPrimitive;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Public};
 use openssl::rsa::Padding;
@@ -25,10 +25,10 @@ use openssl::sign;
 use paris::{error, info};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Bundler {
     pub address: String,
-    pub url: String,
+    pub url: String, // FIXME: type of this field should be Url
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -38,22 +38,13 @@ pub struct TxReceipt {
     signature: String,
 }
 
-pub fn get_bundler() -> Result<Bundler, ValidatorCronError> {
-    Ok(Bundler {
-        address: "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs".to_string(),
-        url: "https://node1.bundlr.network/".to_string(),
-    })
-}
-
-pub async fn validate_bundler<Context, HttpClient>(
-    ctx: &Context,
-    bundler: Bundler,
-) -> Result<(), ValidatorCronError>
+pub async fn validate_bundler<Context, HttpClient>(ctx: &Context) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
+    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     let arweave = Arweave::new(ctx.get_arweave_uri());
+    let bundler = ctx.bundler();
     let txs_req = arweave
         .get_latest_transactions(ctx, &bundler.address, Some(50), None)
         .await;
@@ -90,7 +81,7 @@ async fn validate_bundle<Context, HttpClient>(
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient>,
+    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     let block_ok = check_bundle_block(bundle);
@@ -102,7 +93,8 @@ where
     if current_block.is_none() {
         return Ok(());
     } else {
-        let _store = store_bundle(ctx, bundle);
+        let current_block = current_block.unwrap();
+        let _store = store_bundle(ctx, bundle, current_block);
     }
 
     let path = match arweave.get_tx_data(ctx, &bundle.id).await {
@@ -145,12 +137,9 @@ where
     Ok(())
 }
 
-fn check_bundle_block(bundle: &ArweaveTx) -> Result<Option<i64>, ValidatorCronError> {
+fn check_bundle_block(bundle: &ArweaveTx) -> Result<Option<u128>, ValidatorCronError> {
     let current_block = match bundle.block {
-        Some(ref block) => block
-            .height
-            .to_i64()
-            .expect("Could not convert block number from u128 to i64"),
+        Some(ref block) => block.height,
         None => {
             info!("Bundle {} not included in any block", &bundle.id);
             return Ok(None);
@@ -161,9 +150,9 @@ fn check_bundle_block(bundle: &ArweaveTx) -> Result<Option<i64>, ValidatorCronEr
     Ok(Some(current_block))
 }
 
-fn store_bundle<Context>(ctx: &Context, bundle: &ArweaveTx) -> Result<(), ValidatorCronError>
+fn store_bundle<Context>(ctx: &Context, bundle: &ArweaveTx, current_block: u128) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext,
+    Context: queries::QueryContext + BundlerAccess,
 {
     let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
     if !is_bundle_present {
@@ -171,8 +160,8 @@ where
             ctx,
             NewBundle {
                 id: bundle.id.clone(),
-                owner_address: bundle.owner.address.clone(),
-                block_height: bundle.block.as_ref().unwrap().height as i64,
+                owner_address: ctx.bundler().address.clone(),
+                block_height: Block(current_block),
             },
         ) {
             Ok(()) => {
@@ -192,7 +181,7 @@ where
 async fn verify_bundle_tx<Context>(
     ctx: &Context,
     bundle_tx: &Item,
-    current_block: Option<i64>,
+    current_block: Option<u128>,
 ) -> Result<(), ValidatorCronError>
 where
     Context: queries::QueryContext,
@@ -202,7 +191,7 @@ where
     if tx.is_ok() {
         let tx = tx.unwrap();
         tx_receipt = Some(TxReceipt {
-            block: tx.block_promised.try_into().unwrap(), // FIXME: don't use unwrap
+            block: tx.block_promised.into(),
             tx_id: tx.id,
             signature: match std::str::from_utf8(&tx.signature.to_vec()) {
                 Ok(v) => v.to_string(),
@@ -220,18 +209,17 @@ where
         Some(receipt) => {
             let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
             // FIXME: don't use unwrap
-            if tx_is_ok && receipt.block <= current_block.unwrap().try_into().unwrap() {
+            if tx_is_ok && receipt.block <= current_block.unwrap() {
                 if let Err(_err) = insert_tx_in_db(
                     ctx,
                     &NewTransaction {
                         id: receipt.tx_id,
-                        epoch: 0, // TODO: implement epoch correctly
-                        block_promised: receipt.block.try_into().unwrap(), // FIXME: don't use unwrap
-                        block_actual: current_block,
+                        epoch: Epoch(0),
+                        block_promised: receipt.block.into(),
+                        block_actual: current_block.map(Block),
                         signature: receipt.signature.as_bytes().to_vec(),
                         validated: true,
                         bundle_id: Some(bundle_tx.tx_id.clone()),
-                        sent_to_leader: false,
                     },
                 ) {
                     // FIXME: missing error handling
@@ -313,8 +301,8 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     Ok(verifier.verify(&sig).unwrap_or(false))
 }
 
-pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCronError> {
-    let res = get_transactions(&bundler, Some(100), None).await;
+pub async fn validate_transactions(bundler: &Bundler) -> Result<(), ValidatorCronError> {
+    let res = get_transactions(bundler, Some(100), None).await;
     let txs = match res {
         Ok(r) => r.0,
         Err(_) => Vec::new(),
@@ -325,7 +313,7 @@ pub async fn validate_transactions(bundler: Bundler) -> Result<(), ValidatorCron
         let block_ok = tx.current_block < tx.expected_block;
 
         if block_ok {
-            let _res = vote_slash(&bundler);
+            let _res = vote_slash(bundler);
         }
     }
 
@@ -346,7 +334,7 @@ mod tests {
     use http::Method;
     use reqwest::{Request, Response};
 
-    use super::{get_bundler, validate_bundler};
+    use super::{validate_bundler};
 
     #[actix_rt::test]
     async fn validate_bundler_should_abort_due_no_block() {

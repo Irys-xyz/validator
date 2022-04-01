@@ -15,7 +15,6 @@ use diesel::{
 use paris::info;
 use routes::get_tx::get_tx;
 use routes::index::index;
-use routes::post_tx::post_tx;
 
 use crate::{
     database::queries::QueryContext, key_manager, server::routes::sign::sign_route,
@@ -57,10 +56,6 @@ where
                 .service(
                     web::scope("/cosigner")
                         .route("/sign", web::post().to(sign_route::<Context, KeyManager>)),
-                )
-                .service(
-                    web::scope("/leader")
-                        .route("/tx", web::post().to(post_tx::<Context, KeyManager>)),
                 )
                 .service(web::scope("/idle").route("/", web::get().to(index)));
 

@@ -5,15 +5,20 @@ use diesel::{
     SqliteConnection,
 };
 use jsonwebkey::JsonWebKey;
+use url::Url;
 
 use crate::{
-    cron::arweave::ArweaveContext,
+    cron::{arweave::ArweaveContext, Bundler},
     database::queries,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager},
     server::{self, RuntimeContext},
     state::{SharedValidatorState, ValidatorStateAccess},
 };
+
+pub trait BundlerAccess {
+    fn bundler(&self) -> &Bundler;
+}
 
 struct Keys(JsonWebKey, JsonWebKey);
 
@@ -35,6 +40,7 @@ pub struct AppContext<HttpClient = ReqwestClient> {
     validator_state: SharedValidatorState,
     http_client: HttpClient,
     arweave_uri: http::uri::Uri,
+    bundler_connection: Bundler,
 }
 
 impl AppContext {
@@ -45,7 +51,12 @@ impl AppContext {
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
         arweave_uri: http::uri::Uri,
+        bundler_url: &Url,
     ) -> Self {
+        let bundler_connection = Bundler {
+            address: key_manager.bundler_address().to_owned(),
+            url: bundler_url.to_string(),
+        };
         Self {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
@@ -53,7 +64,14 @@ impl AppContext {
             validator_state,
             http_client: ReqwestClient::new(http_client),
             arweave_uri,
+            bundler_connection,
         }
+    }
+}
+
+impl<HttpClient> BundlerAccess for AppContext<HttpClient> {
+    fn bundler(&self) -> &Bundler {
+        &self.bundler_connection
     }
 }
 
@@ -64,8 +82,8 @@ impl<HttpClient> queries::QueryContext for AppContext<HttpClient> {
             .expect("Failed to get connection from database connection pool")
     }
 
-    fn current_epoch(&self) -> i64 {
-        0
+    fn current_epoch(&self) -> u128 {
+        self.validator_state.current_epoch()
     }
 }
 
@@ -90,12 +108,12 @@ impl<HttpClient> server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppCo
         self.key_manager.validator_address()
     }
 
-    fn current_epoch(&self) -> i64 {
-        0
+    fn current_epoch(&self) -> u128 {
+        self.validator_state.current_epoch()
     }
 
     fn current_block(&self) -> u128 {
-        0
+        self.validator_state.current_block()
     }
 
     fn key_manager(&self) -> &Arc<InMemoryKeyManager> {
@@ -129,7 +147,10 @@ pub mod test_utils {
 
     use super::AppContext;
     use crate::{
-        http::reqwest::mock::MockHttpClient, key_manager::InMemoryKeyManager, state::generate_state,
+        cron::Bundler,
+        http::reqwest::mock::MockHttpClient,
+        key_manager::{InMemoryKeyManager, KeyManager},
+        state::generate_state,
     };
     use diesel::{
         r2d2::{self, ConnectionManager},
@@ -151,6 +172,11 @@ pub mod test_utils {
 
         let state = generate_state();
 
+        let bundler_connection = Bundler {
+            address: key_manager.bundler_address().to_owned(),
+            url: "".to_string(),
+        };
+
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
@@ -158,6 +184,7 @@ pub mod test_utils {
             validator_state: state,
             http_client: MockHttpClient::new(|_, _| false),
             arweave_uri: http::uri::Uri::from_str(&"http://example.com".to_string()).unwrap(),
+            bundler_connection,
         }
     }
 
@@ -177,6 +204,11 @@ pub mod test_utils {
 
         let state = generate_state();
 
+        let bundler_connection = Bundler {
+            address: key_manager.bundler_address().to_owned(),
+            url: "".to_string(),
+        };
+
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
@@ -184,6 +216,7 @@ pub mod test_utils {
             validator_state: state,
             http_client,
             arweave_uri: http::uri::Uri::from_str(&"http://example.com".to_string()).unwrap(),
+            bundler_connection,
         }
     }
 }

@@ -6,7 +6,6 @@ use serde::Deserialize;
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ValidatorRole {
-    Leader = 0,
     Cosigner = 1,
     Idle = 2,
 }
@@ -14,7 +13,6 @@ pub enum ValidatorRole {
 impl From<&ValidatorRole> for u8 {
     fn from(v: &ValidatorRole) -> u8 {
         match v {
-            ValidatorRole::Leader => 0,
             ValidatorRole::Cosigner => 1,
             ValidatorRole::Idle => 2,
         }
@@ -24,7 +22,6 @@ impl From<&ValidatorRole> for u8 {
 impl From<u8> for ValidatorRole {
     fn from(v: u8) -> ValidatorRole {
         match v {
-            0 => ValidatorRole::Leader,
             1 => ValidatorRole::Cosigner,
             2 => ValidatorRole::Idle,
             _ => unreachable!(),
@@ -35,7 +32,6 @@ impl From<u8> for ValidatorRole {
 impl From<ValidatorRole> for u8 {
     fn from(v: ValidatorRole) -> u8 {
         match v {
-            ValidatorRole::Leader => 0,
             ValidatorRole::Cosigner => 1,
             ValidatorRole::Idle => 2,
         }

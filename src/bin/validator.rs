@@ -10,6 +10,7 @@ use diesel_migrations::embed_migrations;
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use std::{fs, net::SocketAddr, str::FromStr};
+use url::Url;
 
 use validator::key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig};
 use validator::{context::AppContext, state::generate_state};
@@ -52,6 +53,10 @@ struct AppConfig {
         required_unless_present = "bundler-public"
     )]
     bundler_key: Option<String>,
+
+    /// URL for the bundler connection
+    #[clap(long, env = "BUNDLER_URL")]
+    bundler_url: Url,
 
     /// Path to JWK file holding validator private key
     #[clap(long, env = "VALIDATOR_KEY")]
@@ -115,6 +120,7 @@ impl From<&AppConfig> for AppContext {
             state,
             reqwest::Client::new(),
             arweave_uri,
+            &config.bundler_url,
         )
     }
 }
