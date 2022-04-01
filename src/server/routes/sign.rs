@@ -11,7 +11,10 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     consts::{BUNDLR_AS_BUFFER, VALIDATOR_AS_BUFFER},
-    database::{models::NewTransaction, schema::transactions::dsl::*},
+    database::{
+        models::{Epoch, NewTransaction},
+        schema::transactions::dsl::*,
+    },
     key_manager,
     server::{error::ValidatorServerError, RuntimeContext},
     state::{ValidatorRole, ValidatorStateAccess},
@@ -24,7 +27,7 @@ where
     fn bundler_address(&self) -> &str;
     fn validator_address(&self) -> &str;
     fn key_manager(&self) -> &KeyManager;
-    fn current_epoch(&self) -> i64;
+    fn current_epoch(&self) -> u128;
     fn current_block(&self) -> u128;
 }
 
@@ -183,8 +186,8 @@ where
 
     let new_transaction = NewTransaction {
         id: body.id,
-        epoch: current_epoch,
-        block_promised: i64::try_from(body.block).unwrap(), // FIXME: don't unwrap
+        epoch: Epoch(current_epoch),
+        block_promised: body.block.into(),
         block_actual: None,
         signature: sig.as_bytes().to_vec(),
         validated: false,

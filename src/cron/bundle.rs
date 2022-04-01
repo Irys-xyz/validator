@@ -5,7 +5,7 @@ use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
-use crate::database::models::{NewBundle, NewTransaction};
+use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
 use crate::http;
 use crate::types::Validator;
@@ -17,7 +17,6 @@ use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
 use jsonwebkey::JsonWebKey;
 use lazy_static::lazy_static;
-use num_traits::ToPrimitive;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Public};
 use openssl::rsa::Padding;
@@ -103,7 +102,7 @@ where
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     let block_ok = check_bundle_block(ctx, bundler, bundle).await;
-    let current_block: Option<i64> = None;
+    let current_block: Option<u128> = None;
     if let Err(err) = block_ok {
         return Err(err);
     }
@@ -152,15 +151,12 @@ async fn check_bundle_block<Context>(
     ctx: &Context,
     bundler: &Bundler,
     bundle: &ArweaveTx,
-) -> Result<Option<i64>, ValidatorCronError>
+) -> Result<Option<u128>, ValidatorCronError>
 where
     Context: queries::QueryContext,
 {
     let current_block = match bundle.block {
-        Some(ref block) => block
-            .height
-            .to_i64()
-            .expect("Could not convert block number from u128 to i64"),
+        Some(ref block) => block.height,
         None => {
             info!(
                 "Bundle {} not included in any block, moving on ...",
@@ -179,7 +175,7 @@ where
             NewBundle {
                 id: bundle.id.clone(),
                 owner_address: bundler.address.clone(),
-                block_height: current_block,
+                block_height: Block(current_block),
             },
         ) {
             Ok(()) => {
@@ -199,7 +195,7 @@ where
 async fn verify_bundle_tx<Context>(
     ctx: &Context,
     bundle_tx: &Item,
-    current_block: Option<i64>,
+    current_block: Option<u128>,
 ) -> Result<(), ValidatorCronError>
 where
     Context: queries::QueryContext,
@@ -209,7 +205,7 @@ where
     if tx.is_ok() {
         let tx = tx.unwrap();
         tx_receipt = Some(TxReceipt {
-            block: tx.block_promised.try_into().unwrap(), // FIXME: don't use unwrap
+            block: tx.block_promised.into(),
             tx_id: tx.id,
             signature: match std::str::from_utf8(&tx.signature.to_vec()) {
                 Ok(v) => v.to_string(),
@@ -227,14 +223,14 @@ where
         Some(receipt) => {
             let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
             // FIXME: don't use unwrap
-            if tx_is_ok && receipt.block <= current_block.unwrap().try_into().unwrap() {
+            if tx_is_ok && receipt.block <= current_block.unwrap() {
                 if let Err(_err) = insert_tx_in_db(
                     ctx,
                     &NewTransaction {
                         id: receipt.tx_id,
-                        epoch: 0, // TODO: implement epoch correctly
-                        block_promised: receipt.block.try_into().unwrap(), // FIXME: don't use unwrap
-                        block_actual: current_block,
+                        epoch: Epoch(0),
+                        block_promised: receipt.block.into(),
+                        block_actual: current_block.map(Block),
                         signature: receipt.signature.as_bytes().to_vec(),
                         validated: true,
                         bundle_id: Some(bundle_tx.tx_id.clone()),

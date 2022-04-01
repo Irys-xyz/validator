@@ -11,7 +11,7 @@ use crate::state::ValidatorStateAccess;
 
 pub trait QueryContext: ValidatorStateAccess {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
-    fn current_epoch(&self) -> i64;
+    fn current_epoch(&self) -> u128;
 }
 
 pub fn get_bundle<Context>(ctx: &Context, b_id: &str) -> Result<Bundle, Error>
