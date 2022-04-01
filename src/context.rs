@@ -62,7 +62,7 @@ impl<HttpClient> queries::QueryContext for AppContext<HttpClient> {
     }
 
     fn current_epoch(&self) -> u128 {
-        0
+        self.validator_state.current_epoch()
     }
 }
 
@@ -88,11 +88,11 @@ impl<HttpClient> server::routes::sign::Config<Arc<InMemoryKeyManager>> for AppCo
     }
 
     fn current_epoch(&self) -> u128 {
-        0
+        self.validator_state.current_epoch()
     }
 
     fn current_block(&self) -> u128 {
-        0
+        self.validator_state.current_block()
     }
 
     fn key_manager(&self) -> &Arc<InMemoryKeyManager> {
