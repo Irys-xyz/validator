@@ -276,6 +276,7 @@ mod tests {
             })
             .then(|_: &Request| {
                 let data = "stream";
+
                 let response = http::response::Builder::new()
                     .status(200)
                     .body(data)

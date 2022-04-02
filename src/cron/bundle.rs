@@ -326,14 +326,16 @@ pub async fn validate_transactions(bundler: &Bundler) -> Result<(), ValidatorCro
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Read};
-
+    use crate::utils::get_file_as_byte_vector;
     use crate::{
         context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
         key_manager::test_utils::test_keys,
     };
     use http::Method;
+    use paris::error;
     use reqwest::{Request, Response};
+    use std::fs::{self, File};
+    use std::io::{BufRead, BufReader, Read};
 
     use super::validate_bundler;
 
@@ -379,7 +381,7 @@ mod tests {
                 req.method() == Method::POST && &req.url().to_string() == url
             })
             .then(|_: &Request| {
-                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"test_bundle\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\", \"recipient\": \"\", \"tags\": [], \"block\": { \"id\": \"id\", \"timestamp\": 10, \"height\": 10 } } } ] } } }";
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\", \"recipient\": \"\", \"tags\": [], \"block\": { \"id\": \"id\", \"timestamp\": 10, \"height\": 10 } } } ] } } }";
                 let response = http::response::Builder::new()
                     .status(200)
                     .body(data)
@@ -387,18 +389,14 @@ mod tests {
                 Response::from(response)
             })
             .when(|req: &Request| {
-                let url = "http://example.com/test_bundle";
+                let url = "http://example.com/tx_id";
                 req.method() == Method::GET && &req.url().to_string() == url
             })
             .then(|_: &Request| {
-                let mut test_bundle = String::new();
-                let mut f = File::open("./bundles/test_bundle").expect("Unable to open test_bundle");
-                f.read_to_string(&mut test_bundle).expect("Unable to read string");
-
-                dbg!(&test_bundle);
+                let buffer = get_file_as_byte_vector("./bundles/test_bundle").unwrap();
                 let response = http::response::Builder::new()
                     .status(200)
-                    .body(test_bundle)
+                    .body(buffer)
                     .unwrap();
                 Response::from(response)
             });
