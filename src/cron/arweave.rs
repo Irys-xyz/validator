@@ -143,8 +143,7 @@ pub trait ArweaveContext<HttpClient>
 where
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    fn get_client(&self) -> HttpClient;
-    fn get_arweave_uri(&self) -> &http::uri::Uri;
+    fn get_client(&self) -> &HttpClient;
 }
 
 #[warn(dead_code)]
@@ -222,11 +221,14 @@ impl Arweave {
             raw_query, raw_variables
         );
 
-        let client = reqwest::Client::new();
+        let reqwest_client = reqwest::Client::new();
         let body = serde_json::from_str::<ReqBody>(&data);
-        let req = client.post(&uri).json(&body.unwrap()).build().unwrap();
-        let client = ctx.get_client();
-        let res = client.execute(req).await.unwrap();
+        let req = reqwest_client
+            .post(&uri)
+            .json(&body.unwrap())
+            .build()
+            .unwrap();
+        let res = ctx.get_client().execute(req).await.unwrap();
 
         match res.status() {
             reqwest::StatusCode::OK => {
@@ -256,16 +258,14 @@ impl Arweave {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
+    use std::{fs, path::Path, str::FromStr};
 
     use crate::{
-        context::test_utils::test_context_with_http_client, cron::arweave::ArweaveContext,
+        context::test_utils::test_context_with_http_client, cron::arweave::Arweave,
         http::reqwest::mock::MockHttpClient, key_manager::test_utils::test_keys,
     };
-    use http::Method;
+    use http::{Method, Uri};
     use reqwest::{Request, Response};
-
-    use super::Arweave;
 
     #[actix_rt::test]
     async fn get_tx_data_should_return_ok() {
@@ -286,7 +286,9 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let arweave = Arweave::new(ctx.get_arweave_uri());
+        let arweave = Arweave {
+            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+        };
         arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
 
         let raw_path = "./bundles/tx_id";
@@ -319,7 +321,9 @@ mod tests {
 
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
-        let arweave = Arweave::new(ctx.get_arweave_uri());
+        let arweave = Arweave {
+            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+        };
         arweave
             .get_latest_transactions(&ctx, "owner", None, None)
             .await

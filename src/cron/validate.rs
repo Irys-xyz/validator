@@ -8,7 +8,10 @@ use super::error::ValidatorCronError;
 
 pub async fn validate<Context, HttpClient>(ctx: &Context) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + context::BundlerAccess,
+    Context: queries::QueryContext
+        + arweave::ArweaveContext<HttpClient>
+        + context::ArweaveAccess
+        + context::BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     match ctx.get_validator_state().role() {

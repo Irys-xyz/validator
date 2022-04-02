@@ -1,12 +1,12 @@
 extern crate diesel;
 
-use super::arweave;
+use super::arweave::{self, ArweaveContext};
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
-use crate::context::BundlerAccess;
+use crate::context::{ArweaveAccess, BundlerAccess};
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
-use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
+use crate::database::models::{Block, Bundle, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
 use crate::http;
 use crate::types::Validator;
@@ -40,10 +40,11 @@ pub struct TxReceipt {
 
 pub async fn validate_bundler<Context, HttpClient>(ctx: &Context) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
+    Context:
+        queries::QueryContext + arweave::ArweaveContext<HttpClient> + ArweaveAccess + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let arweave = Arweave::new(ctx.get_arweave_uri());
+    let arweave = ctx.arweave();
     let bundler = ctx.bundler();
     let txs_req = arweave
         .get_latest_transactions(ctx, &bundler.address, Some(50), None)
@@ -81,7 +82,7 @@ async fn validate_bundle<Context, HttpClient>(
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
+    Context: queries::QueryContext + ArweaveContext<HttpClient> + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     let block_ok = check_bundle_block(bundle);
