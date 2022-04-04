@@ -6,7 +6,7 @@ use super::slasher::vote_slash;
 use super::transactions::get_transactions;
 use crate::context::{ArweaveAccess, BundlerAccess};
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
-use crate::database::models::{Block, Bundle, Epoch, NewBundle, NewTransaction};
+use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
 use crate::http;
 use crate::types::Validator;

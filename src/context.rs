@@ -1,10 +1,9 @@
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 use diesel::{
     r2d2::{self, ConnectionManager, PooledConnection},
     SqliteConnection,
 };
-use http::Uri;
 use jsonwebkey::JsonWebKey;
 use url::Url;
 
