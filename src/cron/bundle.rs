@@ -1,10 +1,10 @@
 extern crate diesel;
 
-use super::arweave;
+use super::arweave::{self, ArweaveContext};
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
-use crate::context::BundlerAccess;
+use crate::context::{ArweaveAccess, BundlerAccess};
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
@@ -40,10 +40,11 @@ pub struct TxReceipt {
 
 pub async fn validate_bundler<Context, HttpClient>(ctx: &Context) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
+    Context:
+        queries::QueryContext + arweave::ArweaveContext<HttpClient> + ArweaveAccess + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let arweave = Arweave::new(80, String::from("arweave.net"), String::from("http"));
+    let arweave = ctx.arweave();
     let bundler = ctx.bundler();
     let txs_req = arweave
         .get_latest_transactions(ctx, &bundler.address, Some(50), None)
@@ -58,8 +59,8 @@ where
     }
 
     let txs_req = &txs_req.unwrap().0;
-    for bundle_tx in txs_req {
-        let res = validate_bundle(ctx, &arweave, bundle_tx).await;
+    for bundle in txs_req {
+        let res = validate_bundle(ctx, &arweave, bundle).await;
         if let Err(err) = res {
             match err {
                 ValidatorCronError::TxNotFound => todo!(),
@@ -67,18 +68,10 @@ where
                 ValidatorCronError::TxsFromAddressNotFound => todo!(),
                 ValidatorCronError::BundleNotInsertedInDB => todo!(),
                 ValidatorCronError::TxInvalid => todo!(),
-                ValidatorCronError::FileError => todo!(),
+                ValidatorCronError::FileError => (),
             }
         }
     }
-
-    // If no - sad - OK
-
-    // If yes - check that block_seeded == block_expected -
-
-    // If valid - return
-
-    // If not - vote to slash... once vote is confirmed then tell all peers to check
 
     Ok(())
 }
@@ -89,16 +82,20 @@ async fn validate_bundle<Context, HttpClient>(
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + BundlerAccess,
+    Context: queries::QueryContext + ArweaveContext<HttpClient> + BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let block_ok = check_bundle_block(ctx, bundle).await;
-    let current_block: Option<u128> = None;
+    let block_ok = check_bundle_block(bundle);
     if let Err(err) = block_ok {
         return Err(err);
     }
+
+    let current_block = block_ok.unwrap();
     if current_block.is_none() {
         return Ok(());
+    } else {
+        let current_block = current_block.unwrap();
+        let _store = store_bundle(ctx, bundle, current_block);
     }
 
     let path = match arweave.get_tx_data(ctx, &bundle.id).await {
@@ -129,36 +126,40 @@ where
             return Err(ValidatorCronError::TxInvalid);
         }
     }
+    info!("All transactions ok in bundle {}", &bundle.id);
 
+    /*
     match std::fs::remove_file(path.clone()) {
         Ok(_r) => info!("Successfully deleted {}", path),
         Err(err) => error!("Error deleting file {} : {}", path, err),
     };
+    */
 
     Ok(())
 }
 
-async fn check_bundle_block<Context>(
-    ctx: &Context,
-    bundle: &ArweaveTx,
-) -> Result<Option<u128>, ValidatorCronError>
-where
-    Context: queries::QueryContext + BundlerAccess,
-{
+fn check_bundle_block(bundle: &ArweaveTx) -> Result<Option<u128>, ValidatorCronError> {
     let current_block = match bundle.block {
         Some(ref block) => block.height,
         None => {
-            info!(
-                "Bundle {} not included in any block, moving on ...",
-                &bundle.id
-            );
+            info!("Bundle {} not included in any block", &bundle.id);
             return Ok(None);
         }
     };
 
     info!("Bundle {} included in block {}", &bundle.id, current_block);
-    let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
+    Ok(Some(current_block))
+}
 
+fn store_bundle<Context>(
+    ctx: &Context,
+    bundle: &ArweaveTx,
+    current_block: u128,
+) -> Result<(), ValidatorCronError>
+where
+    Context: queries::QueryContext + BundlerAccess,
+{
+    let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
     if !is_bundle_present {
         return match insert_bundle_in_db(
             ctx,
@@ -170,7 +171,7 @@ where
         ) {
             Ok(()) => {
                 info!("Bundle {} successfully stored", &bundle.id);
-                Ok(Some(current_block))
+                Ok(())
             }
             Err(err) => {
                 error!("Error when storing bundle {} : {}", &bundle.id, err);
@@ -179,7 +180,7 @@ where
         };
     }
 
-    Ok(Some(current_block))
+    Ok(())
 }
 
 async fn verify_bundle_tx<Context>(
@@ -232,7 +233,10 @@ where
                 // TODO: vote slash
             }
         }
-        None => todo!(),
+        None => {
+            // TODO: handle unfound txreceipt
+            ()
+        }
     }
 
     Ok(())
@@ -319,4 +323,88 @@ pub async fn validate_transactions(bundler: &Bundler) -> Result<(), ValidatorCro
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::get_file_as_byte_vector;
+    use crate::{
+        context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
+        key_manager::test_utils::test_keys,
+    };
+    use http::Method;
+    use paris::error;
+    use reqwest::{Request, Response};
+    use std::fs::{self, File};
+    use std::io::{BufRead, BufReader, Read};
+
+    use super::validate_bundler;
+
+    #[actix_rt::test]
+    async fn validate_bundler_should_abort_due_no_block() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\",\"recipient\": \"\", \"tags\": [], \"block\": null } } ] } } }";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            })
+            .when(|req: &Request| {
+                let url = "http://example.com/tx_id";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let res = validate_bundler(&ctx).await;
+        assert!(res.is_ok())
+    }
+
+    #[actix_rt::test]
+    async fn validate_bundler_should_return_ok() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\", \"recipient\": \"\", \"tags\": [], \"block\": { \"id\": \"id\", \"timestamp\": 10, \"height\": 10 } } } ] } } }";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            })
+            .when(|req: &Request| {
+                let url = "http://example.com/tx_id";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let buffer = get_file_as_byte_vector("./bundles/test_bundle").unwrap();
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(buffer)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let res = validate_bundler(&ctx).await;
+        assert!(res.is_ok())
+    }
 }

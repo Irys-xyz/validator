@@ -9,7 +9,7 @@ use diesel::{
 use diesel_migrations::embed_migrations;
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
-use std::{fs, net::SocketAddr};
+use std::{fs, net::SocketAddr, str::FromStr};
 use url::Url;
 
 use validator::key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig};
@@ -61,6 +61,9 @@ struct AppConfig {
     /// Path to JWK file holding validator private key
     #[clap(long, env = "VALIDATOR_KEY")]
     validator_key: String,
+
+    #[clap(long, env = "ARWEAVE_URI")]
+    arweave_uri: String,
 }
 
 struct Keys(JsonWebKey, JsonWebKey);
@@ -108,12 +111,15 @@ impl From<&AppConfig> for AppContext {
             embedded_migrations::run(&pool.get().unwrap()).unwrap();
         }
 
+        let arweave_uri = http::uri::Uri::from_str(&config.arweave_uri).unwrap();
+
         Self::new(
             key_manager,
             pool,
             config.listen,
             state,
             reqwest::Client::new(),
+            arweave_uri,
             &config.bundler_url,
         )
     }

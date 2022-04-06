@@ -1,17 +1,13 @@
-pub mod error;
-
-use error::ArweaveError;
 use paris::error;
 use paris::info;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
-use std::str::FromStr;
 
-use futures_util::StreamExt;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::str::FromStr;
 
 use crate::http::Client;
 
@@ -36,7 +32,7 @@ pub struct Tag {
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct Owner {
-    address: String,
+    pub address: String,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -101,6 +97,24 @@ pub struct TransactionStatus {
     pub block_indep_hash: String,
 }
 
+use derive_more::{Display, Error};
+use std::convert::From;
+
+#[derive(Debug, Display, Error, Clone)]
+pub enum ArweaveError {
+    TxsNotFound,
+    MalformedQuery,
+    InternalServerError,
+    GatewayTimeout,
+    UnknownErr,
+}
+
+impl From<anyhow::Error> for ArweaveError {
+    fn from(_err: anyhow::Error) -> ArweaveError {
+        ArweaveError::UnknownErr
+    }
+}
+
 #[derive(Clone)]
 pub enum ArweaveProtocol {
     Http,
@@ -109,9 +123,7 @@ pub enum ArweaveProtocol {
 
 #[derive(Clone)]
 pub struct Arweave {
-    pub host: String,
-    pub port: u16,
-    pub protocol: ArweaveProtocol,
+    pub uri: http::uri::Uri,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -131,21 +143,13 @@ pub trait ArweaveContext<HttpClient>
 where
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    fn get_client(&self) -> HttpClient;
+    fn get_client(&self) -> &HttpClient;
 }
 
 #[warn(dead_code)]
 impl Arweave {
-    pub fn new(port: u16, host: String, protocol: String) -> Arweave {
-        Arweave {
-            port,
-            host,
-            protocol: match &protocol[..] {
-                "http" => ArweaveProtocol::Http,
-                "https" => ArweaveProtocol::Https,
-                _ => ArweaveProtocol::Https,
-            },
-        }
+    pub fn new(uri: &http::uri::Uri) -> Arweave {
+        Arweave { uri: uri.clone() }
     }
 
     pub async fn get_tx_data<Context, HttpClient>(
@@ -162,32 +166,27 @@ impl Arweave {
         let file_path = Path::new(&raw_path);
         let mut buffer = File::create(&file_path).unwrap();
 
-        let host: String = format!("{}/{}", self.get_host(), transaction_id);
-
+        let uri =
+            http::uri::Uri::from_str(&format!("{}{}", self.get_host(), transaction_id).to_string())
+                .unwrap();
         let req: http::Request<String> = http::request::Builder::new()
             .method(http::Method::GET)
-            .uri(http::uri::Uri::from_str(&host).unwrap())
+            .uri(uri)
             .body("".to_string())
             .unwrap();
-        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-        let res = ctx.get_client().execute(req).await.expect("request failed");
-        if res.status().is_success() {
-            let mut stream = res.bytes_stream();
 
-            while let Some(item) = stream.next().await {
-                if let Err(r) = item {
-                    error!("Error writing on file {:?}: {:?}", file_path.to_str(), r);
-                    return Err(r);
-                } else {
-                    match buffer.write(&item.unwrap()) {
-                        Ok(_) => {}
-                        Err(err) => {
-                            error!("Error writing on file {:?}: {:?}", file_path.to_str(), err)
-                        }
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+        let mut res: reqwest::Response =
+            ctx.get_client().execute(req).await.expect("request failed");
+        if res.status().is_success() {
+            while let Some(chunk) = res.chunk().await? {
+                match buffer.write(&chunk) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!("Error writing on file {:?}: {:?}", file_path.to_str(), err)
                     }
                 }
             }
-
             return Ok(String::from(file_path.to_string_lossy()));
         } else {
             Err(res.error_for_status().err().unwrap())
@@ -216,20 +215,21 @@ impl Arweave {
             }
         );
 
-        let url = format!("{}/graphql?query={}", self.get_host(), raw_query);
-        let client = ctx.get_client();
+        let uri = format!("{}graphql?query={}", self.get_host(), raw_query);
         let data = format!(
             "{{\"query\":\"{}\",\"variables\":{}}}",
             raw_query, raw_variables
         );
 
-        let req: http::Request<String> = http::request::Builder::new()
-            .method(http::Method::POST)
-            .uri(http::uri::Uri::from_str(&url).unwrap())
-            .body(data)
+        let reqwest_client = reqwest::Client::new();
+        let body = serde_json::from_str::<ReqBody>(&data);
+        let req = reqwest_client
+            .post(&uri)
+            .json(&body.unwrap())
+            .build()
             .unwrap();
-        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-        let res = client.execute(req).await.unwrap();
+        let res = ctx.get_client().execute(req).await.unwrap();
+
         match res.status() {
             reqwest::StatusCode::OK => {
                 let res: GraphqlQueryResponse = res.json().await.unwrap();
@@ -251,19 +251,82 @@ impl Arweave {
         }
     }
 
-    fn get_host(&self) -> String {
-        let protocol = match self.protocol {
-            ArweaveProtocol::Http => "http",
-            ArweaveProtocol::Https => "https",
-        };
-
-        if self.port == 80 {
-            format!("{}://{}", protocol, self.host)
-        } else {
-            format!("{}://{}:{}", protocol, self.host, self.port)
-        }
+    fn get_host(&self) -> http::uri::Uri {
+        self.uri.clone()
     }
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use std::{fs, path::Path, str::FromStr};
+
+    use crate::{
+        context::test_utils::test_context_with_http_client, cron::arweave::Arweave,
+        http::reqwest::mock::MockHttpClient, key_manager::test_utils::test_keys,
+    };
+    use http::{Method, Uri};
+    use reqwest::{Request, Response};
+
+    #[actix_rt::test]
+    async fn get_tx_data_should_return_ok() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/tx_id";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "stream";
+
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let arweave = Arweave {
+            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+        };
+        arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
+
+        let raw_path = "./bundles/tx_id";
+        let file_path = Path::new(raw_path).is_file();
+        assert!(file_path);
+        match fs::remove_file(raw_path) {
+            Ok(_) => (),
+            Err(_) => println!(
+                "File {} not removed properly, please delete it manually",
+                raw_path
+            ),
+        }
+    }
+
+    #[actix_rt::test]
+    async fn get_latest_transactions_should_return_ok() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\",\"recipient\": \"\", \"tags\": [], \"block\": null } } ] } } }";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let arweave = Arweave {
+            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+        };
+        arweave
+            .get_latest_transactions(&ctx, "owner", None, None)
+            .await
+            .unwrap();
+    }
+}

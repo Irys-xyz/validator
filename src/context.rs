@@ -8,7 +8,10 @@ use jsonwebkey::JsonWebKey;
 use url::Url;
 
 use crate::{
-    cron::{arweave::ArweaveContext, Bundler},
+    cron::{
+        arweave::{Arweave, ArweaveContext},
+        Bundler,
+    },
     database::queries,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager},
@@ -18,6 +21,10 @@ use crate::{
 
 pub trait BundlerAccess {
     fn bundler(&self) -> &Bundler;
+}
+
+pub trait ArweaveAccess {
+    fn arweave(&self) -> &Arweave;
 }
 
 struct Keys(JsonWebKey, JsonWebKey);
@@ -39,6 +46,7 @@ pub struct AppContext<HttpClient = ReqwestClient> {
     listen: SocketAddr,
     validator_state: SharedValidatorState,
     http_client: HttpClient,
+    arweave_client: Arweave,
     bundler_connection: Bundler,
 }
 
@@ -49,18 +57,22 @@ impl AppContext {
         listen: SocketAddr,
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
+        arweave_uri: http::uri::Uri,
         bundler_url: &Url,
     ) -> Self {
         let bundler_connection = Bundler {
             address: key_manager.bundler_address().to_owned(),
             url: bundler_url.to_string(),
         };
+        let arweave_client = Arweave { uri: arweave_uri };
+
         Self {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
             listen,
             validator_state,
             http_client: ReqwestClient::new(http_client),
+            arweave_client,
             bundler_connection,
         }
     }
@@ -69,6 +81,22 @@ impl AppContext {
 impl<HttpClient> BundlerAccess for AppContext<HttpClient> {
     fn bundler(&self) -> &Bundler {
         &self.bundler_connection
+    }
+}
+
+impl<HttpClient> ArweaveAccess for AppContext<HttpClient> {
+    fn arweave(&self) -> &Arweave {
+        &self.arweave_client
+    }
+}
+
+impl<HttpClient> ArweaveContext<HttpClient> for AppContext<HttpClient>
+where
+    HttpClient:
+        crate::http::Client<Request = reqwest::Request, Response = reqwest::Response> + Clone,
+{
+    fn get_client(&self) -> &HttpClient {
+        &self.http_client
     }
 }
 
@@ -124,23 +152,13 @@ impl<HttpClient> ValidatorStateAccess for AppContext<HttpClient> {
     }
 }
 
-impl<HttpClient> ArweaveContext<HttpClient> for AppContext<HttpClient>
-where
-    HttpClient:
-        crate::http::Client<Request = reqwest::Request, Response = reqwest::Response> + Clone,
-{
-    fn get_client(&self) -> HttpClient {
-        self.http_client.clone()
-    }
-}
-
 #[cfg(test)]
 pub mod test_utils {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
     use super::AppContext;
     use crate::{
-        cron::Bundler,
+        cron::{arweave::Arweave, Bundler},
         http::reqwest::mock::MockHttpClient,
         key_manager::{InMemoryKeyManager, KeyManager},
         state::generate_state,
@@ -149,6 +167,7 @@ pub mod test_utils {
         r2d2::{self, ConnectionManager},
         SqliteConnection,
     };
+    use http::Uri;
 
     embed_migrations!();
 
@@ -170,12 +189,17 @@ pub mod test_utils {
             url: "".to_string(),
         };
 
+        let arweave_client = Arweave {
+            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+        };
+
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client: MockHttpClient::new(|_, _| false),
+            arweave_client,
             bundler_connection,
         }
     }
@@ -201,12 +225,17 @@ pub mod test_utils {
             url: "".to_string(),
         };
 
+        let arweave_client = Arweave {
+            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+        };
+
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client,
+            arweave_client,
             bundler_connection,
         }
     }

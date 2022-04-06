@@ -18,7 +18,10 @@ pub use bundle::Bundler;
 // Update contract state
 pub async fn run_crons<Context, HttpClient>(ctx: Context)
 where
-    Context: queries::QueryContext + arweave::ArweaveContext<HttpClient> + context::BundlerAccess,
+    Context: queries::QueryContext
+        + arweave::ArweaveContext<HttpClient>
+        + context::ArweaveAccess
+        + context::BundlerAccess,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     info!("Validator starting ...");
