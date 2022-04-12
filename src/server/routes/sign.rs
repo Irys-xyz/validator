@@ -160,10 +160,13 @@ where
 
     // Check that the body.block is not too far in the past nor too far in the future
     match body.block.cmp(&current_block) {
-        std::cmp::Ordering::Less if current_block - body.block > 5 => {
+        std::cmp::Ordering::Less => {
             return Ok(HttpResponse::BadRequest().body("Invalid block number"))
         }
-        std::cmp::Ordering::Greater if body.block - current_block > 5 => {
+        std::cmp::Ordering::Greater if body.block - current_block < 395 => {
+            return Ok(HttpResponse::BadRequest().body("Invalid block number"))
+        }
+        std::cmp::Ordering::Greater if body.block - current_block > 405 => {
             return Ok(HttpResponse::BadRequest().body("Invalid block number"))
         }
         _ => (),
@@ -338,7 +341,7 @@ mod tests {
 
         let msg = test_message(
             &bundler_private_key,
-            5,
+            400,
             ctx.key_manager().validator_address().to_string(),
         );
 
@@ -371,7 +374,7 @@ mod tests {
 
         let msg = test_message(
             &bundler_private_key,
-            11,
+            406,
             ctx.key_manager().validator_address().to_string(),
         );
 
@@ -389,7 +392,7 @@ mod tests {
     async fn block_number_too_far_behind_yields_bad_request() {
         let (key_manager, bundler_private_key) = crate::key_manager::test_utils::test_keys();
         let ctx = test_context(key_manager);
-        ctx.get_validator_state().set_current_block(30);
+        ctx.get_validator_state().set_current_block(6);
 
         let app = App::new().app_data(Data::new(ctx.clone())).route(
             "/",
@@ -400,7 +403,7 @@ mod tests {
 
         let msg = test_message(
             &bundler_private_key,
-            10,
+            400,
             ctx.key_manager().validator_address().to_string(),
         );
 
@@ -430,7 +433,7 @@ mod tests {
             let (_, wrong_key) = crate::key_manager::test_utils::test_keys();
             test_message(
                 &wrong_key,
-                5,
+                400,
                 ctx.key_manager().validator_address().to_string(),
             )
         };
@@ -460,7 +463,7 @@ mod tests {
         let msg = {
             test_message(
                 &bundler_private_key,
-                5,
+                400,
                 // Use bundler address, main point is to use any other address,
                 // but validator's correct one
                 ctx.key_manager().bundler_address().to_string(),
