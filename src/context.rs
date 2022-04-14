@@ -8,10 +8,8 @@ use jsonwebkey::JsonWebKey;
 use url::Url;
 
 use crate::{
-    cron::{
-        arweave::{Arweave, ArweaveContext},
-        Bundler,
-    },
+    bundler::{get_bundler_config, Bundler},
+    cron::arweave::{Arweave, ArweaveContext},
     database::queries,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager},
@@ -57,14 +55,22 @@ impl AppContext {
         listen: SocketAddr,
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
-        arweave_uri: http::uri::Uri,
+        arweave_url: Option<&Url>,
         bundler_url: &Url,
     ) -> Self {
         let bundler_connection = Bundler {
             address: key_manager.bundler_address().to_owned(),
             url: bundler_url.to_string(),
         };
-        let arweave_client = Arweave { uri: arweave_uri };
+
+        let arweave = match arweave_url {
+            Some(url) => url,
+            None => todo!(),
+        };
+
+        let arweave_client = Arweave {
+            url: arweave.clone(),
+        };
 
         Self {
             key_manager: Arc::new(key_manager),
@@ -158,7 +164,8 @@ pub mod test_utils {
 
     use super::AppContext;
     use crate::{
-        cron::{arweave::Arweave, Bundler},
+        bundler::Bundler,
+        cron::arweave::Arweave,
         http::reqwest::mock::MockHttpClient,
         key_manager::{InMemoryKeyManager, KeyManager},
         state::generate_state,
@@ -167,7 +174,7 @@ pub mod test_utils {
         r2d2::{self, ConnectionManager},
         SqliteConnection,
     };
-    use http::Uri;
+    use url::Url;
 
     embed_migrations!();
 
@@ -190,7 +197,7 @@ pub mod test_utils {
         };
 
         let arweave_client = Arweave {
-            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
         };
 
         AppContext {
@@ -226,7 +233,7 @@ pub mod test_utils {
         };
 
         let arweave_client = Arweave {
-            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
         };
 
         AppContext {

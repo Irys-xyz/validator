@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
+use url::Url;
 
 use crate::http::Client;
 
@@ -123,7 +124,7 @@ pub enum ArweaveProtocol {
 
 #[derive(Clone)]
 pub struct Arweave {
-    pub uri: http::uri::Uri,
+    pub url: Url,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -148,8 +149,8 @@ where
 
 #[warn(dead_code)]
 impl Arweave {
-    pub fn new(uri: &http::uri::Uri) -> Arweave {
-        Arweave { uri: uri.clone() }
+    pub fn new(url: Url) -> Arweave {
+        Arweave { url }
     }
 
     pub async fn get_tx_data<Context, HttpClient>(
@@ -215,7 +216,7 @@ impl Arweave {
             }
         );
 
-        let uri = format!("{}graphql?query={}", self.get_host(), raw_query);
+        let url = format!("{}graphql?query={}", self.get_host(), raw_query);
         let data = format!(
             "{{\"query\":\"{}\",\"variables\":{}}}",
             raw_query, raw_variables
@@ -224,7 +225,7 @@ impl Arweave {
         let reqwest_client = reqwest::Client::new();
         let body = serde_json::from_str::<ReqBody>(&data);
         let req = reqwest_client
-            .post(&uri)
+            .post(&url)
             .json(&body.unwrap())
             .build()
             .unwrap();
@@ -251,8 +252,8 @@ impl Arweave {
         }
     }
 
-    fn get_host(&self) -> http::uri::Uri {
-        self.uri.clone()
+    fn get_host(&self) -> Url {
+        self.url.clone()
     }
 }
 
@@ -264,8 +265,9 @@ mod tests {
         context::test_utils::test_context_with_http_client, cron::arweave::Arweave,
         http::reqwest::mock::MockHttpClient, key_manager::test_utils::test_keys,
     };
-    use http::{Method, Uri};
+    use http::Method;
     use reqwest::{Request, Response};
+    use url::Url;
 
     #[actix_rt::test]
     async fn get_tx_data_should_return_ok() {
@@ -287,7 +289,7 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
         let arweave = Arweave {
-            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
         };
         arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
 
@@ -322,7 +324,7 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
         let arweave = Arweave {
-            uri: Uri::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
         };
         arweave
             .get_latest_transactions(&ctx, "owner", None, None)

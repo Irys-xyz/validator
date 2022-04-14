@@ -4,6 +4,7 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 pub mod bundle;
+pub mod bundler;
 pub mod consts;
 pub mod context;
 pub mod cron;

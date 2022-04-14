@@ -13,8 +13,6 @@ use std::time::Duration;
 
 use self::error::ValidatorCronError;
 
-pub use bundle::Bundler;
-
 // Update contract state
 pub async fn run_crons<Context, HttpClient>(ctx: Context)
 where

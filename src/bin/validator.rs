@@ -12,7 +12,11 @@ use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use std::{fs, net::SocketAddr, str::FromStr};
 use url::Url;
 
-use validator::key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig};
+use validator::{
+    bundler::BundlerConfig,
+    http::reqwest::ReqwestClient,
+    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig},
+};
 use validator::{context::AppContext, state::generate_state};
 use validator::{cron::run_crons, server::run_server};
 
@@ -62,8 +66,8 @@ struct AppConfig {
     #[clap(long, env = "VALIDATOR_KEY")]
     validator_key: String,
 
-    #[clap(long, env = "ARWEAVE_URI")]
-    arweave_uri: String,
+    #[clap(long, env = "ARWEAVE_URL")]
+    arweave_url: Option<Url>,
 }
 
 struct Keys(JsonWebKey, JsonWebKey);
@@ -111,15 +115,13 @@ impl From<&AppConfig> for AppContext {
             embedded_migrations::run(&pool.get().unwrap()).unwrap();
         }
 
-        let arweave_uri = http::uri::Uri::from_str(&config.arweave_uri).unwrap();
-
         Self::new(
             key_manager,
             pool,
             config.listen,
             state,
             reqwest::Client::new(),
-            arweave_uri,
+            config.arweave_url.as_ref(),
             &config.bundler_url,
         )
     }
@@ -131,7 +133,9 @@ async fn main() -> () {
 
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
+    let http_client = ReqwestClient::new(reqwest::Client::new());
     let config = AppConfig::parse();
+    let bundler_config = BundlerConfig::new(http_client, &config.bundler_url).await;
     let ctx = AppContext::from(&config);
 
     if !config.no_cron {

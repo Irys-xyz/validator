@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use super::{bundle::Bundler, error::TxsError};
+use crate::bundler::Bundler;
+
+use super::error::TxsError;
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct BundleTransaction {

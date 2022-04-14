@@ -4,6 +4,7 @@ use super::arweave::{self, ArweaveContext};
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
+use crate::bundler::Bundler;
 use crate::context::{ArweaveAccess, BundlerAccess};
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
@@ -24,12 +25,6 @@ use openssl::rsa::Padding;
 use openssl::sign;
 use paris::{error, info};
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Default)]
-pub struct Bundler {
-    pub address: String,
-    pub url: String, // FIXME: type of this field should be Url
-}
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct TxReceipt {
