@@ -14,6 +14,7 @@ use url::Url;
 
 use validator::{
     bundler::BundlerConfig,
+    database::models::Bundle,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig},
 };
@@ -68,6 +69,29 @@ struct AppConfig {
 
     #[clap(long, env = "ARWEAVE_URL")]
     arweave_url: Option<Url>,
+}
+
+fn merge_configs(config: AppConfig, bundler_config: BundlerConfig) -> AppConfig {
+    let arweave_url = match config.arweave_url {
+        Some(u) => Some(u),
+        None => {
+            let url_string = format!("https://{}", bundler_config.gateway);
+            let url = url::Url::from_str(&url_string).unwrap();
+            Some(url)
+        }
+    };
+
+    AppConfig {
+        no_cron: config.no_cron,
+        no_server: config.no_server,
+        database_url: config.database_url,
+        listen: config.listen,
+        bundler_public: config.bundler_public,
+        bundler_key: config.bundler_key,
+        bundler_url: config.bundler_url,
+        validator_key: config.validator_key,
+        arweave_url,
+    }
 }
 
 struct Keys(JsonWebKey, JsonWebKey);
@@ -134,8 +158,9 @@ async fn main() -> () {
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
     let http_client = ReqwestClient::new(reqwest::Client::new());
-    let config = AppConfig::parse();
-    let bundler_config = BundlerConfig::new(http_client, &config.bundler_url).await;
+    let app_config = AppConfig::parse();
+    let bundler_config = BundlerConfig::new(http_client, &app_config.bundler_url).await;
+    let config = merge_configs(app_config, bundler_config);
     let ctx = AppContext::from(&config);
 
     if !config.no_cron {

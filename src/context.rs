@@ -8,7 +8,7 @@ use jsonwebkey::JsonWebKey;
 use url::Url;
 
 use crate::{
-    bundler::{get_bundler_config, Bundler},
+    bundler::Bundler,
     cron::arweave::{Arweave, ArweaveContext},
     database::queries,
     http::reqwest::ReqwestClient,
