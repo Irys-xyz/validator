@@ -17,7 +17,7 @@ pub struct Bundler {
 }
 
 impl BundlerConfig {
-    pub async fn new<HttpClient>(client: HttpClient, url: &Url) -> BundlerConfig
+    pub async fn fetch_config<HttpClient>(client: HttpClient, url: &Url) -> BundlerConfig
     where
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
     {
@@ -29,5 +29,39 @@ impl BundlerConfig {
         let body = serde_json::from_str::<BundlerConfig>(data.as_str());
 
         body.unwrap()
+    }
+}
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use crate::{
+        context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
+        key_manager::test_utils::test_keys,
+    };
+    use http::Method;
+    use reqwest::{Request, Response};
+    use url::Url;
+
+    use super::BundlerConfig;
+
+    #[actix_rt::test]
+    async fn fetch_config_should_return_ok() {
+        let url = url::Url::from_str("https://example.com/").unwrap();
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+        .when(|req: &Request| {
+            let url = "https://example.com/";
+            req.method() == Method::GET && &req.url().to_string() == url
+        })
+        .then(|_: &Request| {
+            let data = "{ \"version\":\"0.2.0\", \"addresses\":{ \"arweave\":\"arweave\" }, \"gateway\":\"example.com\" }";
+            let response = http::response::Builder::new()
+                .status(200)
+                .body(data)
+                .unwrap();
+            Response::from(response)
+        });
+
+        BundlerConfig::fetch_config(client, &url).await;
     }
 }

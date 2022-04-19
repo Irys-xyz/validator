@@ -24,7 +24,7 @@ use validator::{cron::run_crons, server::run_server};
 embed_migrations!();
 
 #[derive(Clone, Debug, Parser)]
-struct AppConfig {
+struct CliOpts {
     /// Do not start cron jobs
     #[clap(long)]
     no_cron: bool,
@@ -71,7 +71,7 @@ struct AppConfig {
     arweave_url: Option<Url>,
 }
 
-fn merge_configs(config: AppConfig, bundler_config: BundlerConfig) -> AppConfig {
+fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
     let arweave_url = match config.arweave_url {
         Some(u) => Some(u),
         None => {
@@ -81,16 +81,9 @@ fn merge_configs(config: AppConfig, bundler_config: BundlerConfig) -> AppConfig 
         }
     };
 
-    AppConfig {
-        no_cron: config.no_cron,
-        no_server: config.no_server,
-        database_url: config.database_url,
-        listen: config.listen,
-        bundler_public: config.bundler_public,
-        bundler_key: config.bundler_key,
-        bundler_url: config.bundler_url,
-        validator_key: config.validator_key,
+    CliOpts {
         arweave_url,
+        ..config
     }
 }
 
@@ -106,8 +99,8 @@ impl InMemoryKeyManagerConfig for Keys {
     }
 }
 
-impl From<&AppConfig> for AppContext {
-    fn from(config: &AppConfig) -> Self {
+impl From<&CliOpts> for AppContext {
+    fn from(config: &CliOpts) -> Self {
         let bundler_jwk = if let Some(key_file_path) = &config.bundler_key {
             let file = fs::read_to_string(key_file_path).unwrap();
             file.parse().unwrap()
@@ -158,8 +151,8 @@ async fn main() -> () {
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
     let http_client = ReqwestClient::new(reqwest::Client::new());
-    let app_config = AppConfig::parse();
-    let bundler_config = BundlerConfig::new(http_client, &app_config.bundler_url).await;
+    let app_config = CliOpts::parse();
+    let bundler_config = BundlerConfig::fetch_config(http_client, &app_config.bundler_url).await;
     let config = merge_configs(app_config, bundler_config);
     let ctx = AppContext::from(&config);
 

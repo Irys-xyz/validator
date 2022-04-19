@@ -6,6 +6,11 @@ Bundlr validator implementation in Rust
 ### Arweave Wallet
 Generate an [Arweave wallet](https://docs.arweave.org/info/wallets/arweave-web-extension-wallet), export it to a Json file and save in the project repository (E.g `./wallet.json`)
 
+Alternatively, you can use the wallet generator tool in this repository. Just run:
+```
+cargo run --bin wallet-tool create > wallet.json
+```
+
 ### Environment Variables
 The following environment variables need to be defined:
 
@@ -17,7 +22,7 @@ VALIDATOR_KEY="./wallet.json"                                   // Path to arwea
 BUNDLER_URL="https://node1.bundlr.network"                      // Bundler Node url
 ```
 
-You can find an example in the `example.env` file. Copy them running:
+You can find an example in the `example.env` file. Copy them by running:
 ```
 cp example.env .env
 ```
