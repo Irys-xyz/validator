@@ -3,15 +3,24 @@
 Bundlr validator implementation in Rust
 
 ## Prerequisites
-### Postgresql
-To run a validator locally, you will need to run an instance of Postgresql. The connection string should be contained in the `.env` file. We strongly recommend [running postgres on docker](https://hub.docker.com/_/postgres), 
-### Diesel
-After running Postgresql, install [Diesel](https://diesel.rs/) and run:
-```
-diesel migration run
-```
 ### Arweave Wallet
-Generate an Arweave wallet, export it to a Json file and save in the project repo as `wallet.json`
+Generate an [Arweave wallet](https://docs.arweave.org/info/wallets/arweave-web-extension-wallet), export it to a Json file and save in the project repository (E.g `./wallet.json`)
+
+### Environment Variables
+The following environment variables need to be defined:
+
+```
+DATABASE_URL="./db/validator.db"                                // Path to store database file
+PORT=1234                                                       // The port exposed
+BUNDLER_PUBLIC="OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"    // Bundler public key
+VALIDATOR_KEY="./wallet.json"                                   // Path to arweave wallet file
+BUNDLER_URL="https://node1.bundlr.network"                      // Bundler Node url
+```
+
+You can find an example in the `example.env` file. Copy them running:
+```
+cp example.env .env
+```
 
 ## Getting started
 After cloning the repo and setting up all the prerequisites, just run:
