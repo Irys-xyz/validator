@@ -144,7 +144,6 @@ pub mod mock {
                 .find(|handler| (handler.matcher)(&req));
             match handler {
                 Some(handler) => {
-                    eprintln!("found handler");
                     let res = (handler.response_builder)(&req);
                     if let Some(call) = state
                         .calls
