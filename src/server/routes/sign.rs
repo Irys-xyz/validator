@@ -4,7 +4,7 @@ use actix_web::{
 };
 use bundlr_sdk::deep_hash::{deep_hash, DeepHashChunk, ONE_AS_BUFFER};
 
-use data_encoding::BASE64URL_NOPAD;
+use data_encoding::BASE64;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use paris::error;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -81,12 +81,9 @@ impl SignRequest {
             error!("Failed to build data for signing: {:?}", err);
         })?;
 
-        let decoded_signature =
-            BASE64URL_NOPAD
-                .decode(self.signature.as_bytes())
-                .map_err(|err| {
-                    error!("Failed to decode signature: {:?}", err);
-                })?;
+        let decoded_signature = BASE64.decode(self.signature.as_bytes()).map_err(|err| {
+            error!("Failed to decode signature: {:?}", err);
+        })?;
 
         Ok(key_manager.verify_bundler_signature(&signature_data, &decoded_signature))
     }
@@ -113,7 +110,7 @@ impl SignRequest {
             error!("Failed to build data for signing: {:?}", err);
         })?;
 
-        Ok(BASE64URL_NOPAD.encode(&key_manager.validator_sign(&signature_data)))
+        Ok(BASE64.encode(&key_manager.validator_sign(&signature_data)))
     }
 }
 
@@ -154,11 +151,11 @@ where
     let current_block = ctx.current_block();
     let key_manager = ctx.key_manager();
 
+    dbg!(&*ctx.validator_address());
     if body.validator != *ctx.validator_address() {
         return Ok(HttpResponse::BadRequest().body("Invalid validator address"));
     }
 
-    // Check that the body.block is not too far in the past nor too far in the future
     match body.block.cmp(&current_block) {
         std::cmp::Ordering::Less => {
             return Ok(HttpResponse::BadRequest().body("Invalid block number"))
@@ -222,7 +219,7 @@ mod tests {
         deep_hash::{DeepHashChunk, ONE_AS_BUFFER},
         deep_hash_sync::deep_hash_sync,
     };
-    use data_encoding::BASE64URL_NOPAD;
+    use data_encoding::BASE64;
     use openssl::{
         hash::MessageDigest,
         pkey::{PKey, Private},
@@ -267,7 +264,7 @@ mod tests {
             (buf, len)
         };
 
-        let sig = BASE64URL_NOPAD.encode(&buf[0..len]);
+        let sig = BASE64.encode(&buf[0..len]);
 
         SignRequest {
             id: tx.to_owned(),
@@ -323,7 +320,7 @@ mod tests {
         ]))
         .unwrap();
 
-        let decoded_signature = BASE64URL_NOPAD.decode(sig.as_bytes()).unwrap();
+        let decoded_signature = BASE64.decode(sig.as_bytes()).unwrap();
         assert!(key_manager.verify_validator_signature(&signature_data, &decoded_signature));
     }
 
