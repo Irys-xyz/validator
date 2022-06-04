@@ -151,7 +151,6 @@ where
     let current_block = ctx.current_block();
     let key_manager = ctx.key_manager();
 
-    dbg!(&*ctx.validator_address());
     if body.validator != *ctx.validator_address() {
         return Ok(HttpResponse::BadRequest().body("Invalid validator address"));
     }

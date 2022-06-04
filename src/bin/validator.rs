@@ -38,7 +38,7 @@ struct CliOpts {
     database_url: String,
 
     /// Listen address for the server
-    #[clap(short, long, env, default_value = "127.0.0.1:10000")]
+    #[clap(short, long, env, default_value = "127.0.0.1:1234")]
     listen: SocketAddr,
 
     /// Bundler public key as string
