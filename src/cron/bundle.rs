@@ -55,7 +55,7 @@ where
 
     let txs_req = &txs_req.unwrap().0;
     for bundle in txs_req {
-        let res = validate_bundle(ctx, &arweave, bundle).await;
+        let res = validate_bundle(ctx, arweave, bundle).await;
         if let Err(err) = res {
             match err {
                 ValidatorCronError::TxNotFound => todo!(),
@@ -235,7 +235,6 @@ where
         }
         None => {
             // TODO: handle unfound txreceipt
-            ()
         }
     }
 
