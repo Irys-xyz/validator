@@ -7,14 +7,14 @@ default-run = "validator"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-rt = "2.5.0"
-actix-web = "4.0.0-beta.15"
+actix-rt = "2.7.0"
+actix-web = "4.0"
 anyhow = "1.0"
 async-stream = "0.3.2"
 avro-rs = "0.13.0"
-awc = "3.0.0-beta.14"
+awc = "3.0"
 base64 = "0.13.0"
-bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "feature/bundler-validation" }
+bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "master" }
 bytes = "1.1.0"
 clap = { version = "3.1.2", features = ["derive", "env"] }
 data-encoding = { version = "2.3.2", features = [ "alloc" ] }
@@ -31,7 +31,7 @@ jsonwebkey = "0.3.4"
 lazy_static = "1.4.0"
 num-traits = "0.2.14"
 once_cell = "1.9.0"
-openssl = "0.10.38"
+openssl = "0.10.40"
 paris = { version = "1.5.8", features = ["timestamps", "macros"] }
 reqwest = { version = "0.11.9", features = ["blocking", "json", "stream"], optional = true }
 serde = "1.0.132"
