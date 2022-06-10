@@ -7,11 +7,18 @@ mod transactions;
 mod validate;
 
 use crate::{context, database::queries, http, key_manager};
+use derive_more::{Display, Error};
 use futures::{join, Future};
 use paris::{error, info};
 use std::time::Duration;
 
-use self::error::ValidatorCronError;
+use self::{arweave::ArweaveError, error::ValidatorCronError};
+
+#[derive(Debug, Display, Error, Clone, PartialEq)]
+pub enum CronJobError {
+    ArweaveError(ArweaveError),
+    ValidatorError(ValidatorCronError),
+}
 
 // Update contract state
 pub async fn run_crons<Context, HttpClient, KeyManager>(ctx: Context)
@@ -19,6 +26,7 @@ where
     Context: queries::QueryContext
         + arweave::ArweaveContext<HttpClient>
         + context::ArweaveAccess
+        + http::ClientAccess<HttpClient>
         + context::BundlerAccess
         + key_manager::KeyManagerAccess<KeyManager>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
@@ -27,6 +35,7 @@ where
     info!("Validator starting ...");
     join!(
         //create_cron("update contract", contract::update_contract, 30),
+        create_cron(&ctx, "sync network info", arweave::sync_network_info, 30),
         create_cron(&ctx, "validate bundler", validate::validate, 2 * 60),
         create_cron(
             &ctx,
@@ -37,13 +46,15 @@ where
     );
 }
 
-async fn create_cron<'a, Context, F>(
+async fn create_cron<'a, Context, HttpClient, F>(
     ctx: &'a Context,
     description: &str,
     f: impl Fn(&'a Context) -> F,
     sleep: u64,
 ) where
-    F: Future<Output = Result<(), ValidatorCronError>> + 'a,
+    F: Future<Output = Result<(), CronJobError>> + 'a,
+    HttpClient: http::Client,
+    Context: http::ClientAccess<HttpClient>,
 {
     loop {
         info!("Task running - {}", description);

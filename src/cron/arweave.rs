@@ -10,14 +10,16 @@ use std::path::Path;
 use std::str::FromStr;
 use url::Url;
 
+use crate::context::ArweaveAccess;
 use crate::http::Client;
+use crate::state::ValidatorStateAccess;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct NetworkInfo {
     pub network: String,
     pub version: usize,
     pub release: usize,
-    pub height: usize,
+    pub height: u128,
     pub current: String,
     pub blocks: usize,
     pub peers: usize,
@@ -101,7 +103,9 @@ pub struct TransactionStatus {
 use derive_more::{Display, Error};
 use std::convert::From;
 
-#[derive(Debug, Display, Error, Clone)]
+use super::CronJobError;
+
+#[derive(Debug, Display, Error, Clone, PartialEq)]
 pub enum ArweaveError {
     TxsNotFound,
     MalformedQuery,
@@ -151,6 +155,31 @@ where
 impl Arweave {
     pub fn new(url: Url) -> Arweave {
         Arweave { url }
+    }
+
+    pub async fn get_network_info<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+    ) -> reqwest::Result<NetworkInfo>
+    where
+        Context: ArweaveContext<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+    {
+        info!("Fetch network info");
+        let uri = http::uri::Uri::from_str(&format!("{}info", self.get_host())).unwrap();
+        let req: http::Request<String> = http::request::Builder::new()
+            .method(http::Method::GET)
+            .uri(uri)
+            .body("".to_string())
+            .unwrap();
+
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+        let res: reqwest::Response = ctx.get_client().execute(req).await.expect("request failed");
+        if res.status().is_success() {
+            return res.json().await;
+        } else {
+            Err(res.error_for_status().err().unwrap())
+        }
     }
 
     pub async fn get_tx_data<Context, HttpClient>(
@@ -256,6 +285,24 @@ impl Arweave {
     }
 }
 
+pub async fn sync_network_info<Context, HttpClient>(ctx: &Context) -> Result<(), CronJobError>
+where
+    Context: ArweaveContext<HttpClient> + ArweaveAccess + ValidatorStateAccess,
+    HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+{
+    let network_info = ctx.arweave().get_network_info(ctx).await.map_err(|err| {
+        paris::error!("Request for network info failed: {:?}", err);
+        CronJobError::ArweaveError(ArweaveError::UnknownErr)
+    })?;
+
+    let state = ctx.get_validator_state();
+
+    paris::info!("Update state: current_block={}", network_info.height);
+    state.set_current_block(network_info.height);
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::Path, str::FromStr};
@@ -267,6 +314,32 @@ mod tests {
     use http::Method;
     use reqwest::{Request, Response};
     use url::Url;
+
+    #[actix_rt::test]
+    async fn get_network_info() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/info";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"network\":\"arweave.N.1\",\"version\":5,\"release\":43,\"height\":551511,\"current\":\"XIDpYbc3b5iuiqclSl_Hrx263Sd4zzmrNja1cvFlqNWUGuyymhhGZYI4WMsID1K3\",\"blocks\":97375,\"peers\":64,\"queue_length\":0,\"node_state_latency\":18}";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let arweave = Arweave {
+            url: Url::from_str("http://example.com").unwrap(),
+        };
+        let network_info = arweave.get_network_info(&ctx).await.unwrap();
+
+        assert_eq!(network_info.height, 551511);
+    }
 
     #[actix_rt::test]
     async fn get_tx_data_should_return_ok() {

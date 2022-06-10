@@ -102,6 +102,16 @@ impl<HttpClient> KeyManagerAccess<InMemoryKeyManager> for AppContext<HttpClient>
     }
 }
 
+impl<HttpClient> crate::http::ClientAccess<HttpClient> for AppContext<HttpClient>
+where
+    HttpClient:
+        crate::http::Client<Request = reqwest::Request, Response = reqwest::Response> + Clone,
+{
+    fn get_http_client(&self) -> &HttpClient {
+        &self.http_client
+    }
+}
+
 impl<HttpClient> ArweaveContext<HttpClient> for AppContext<HttpClient>
 where
     HttpClient:
