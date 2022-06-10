@@ -2,6 +2,7 @@
 extern crate diesel_migrations;
 
 use clap::Parser;
+use data_encoding::BASE64URL_NOPAD;
 use diesel::{
     r2d2::{self, ConnectionManager},
     sqlite::SqliteConnection,
@@ -109,7 +110,10 @@ impl From<&CliOpts> for AppContext {
             JsonWebKey::new(Key::RSA {
                 public: RsaPublic {
                     e: PublicExponent,
-                    n: n.as_bytes().into(),
+                    n: BASE64URL_NOPAD
+                        .decode(n.as_bytes().into())
+                        .expect("Failed to decode bundler's public key")
+                        .into(),
                 },
                 private: None,
             })
