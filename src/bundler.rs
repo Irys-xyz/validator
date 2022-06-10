@@ -35,13 +35,9 @@ impl BundlerConfig {
 mod tests {
     use std::str::FromStr;
 
-    use crate::{
-        context::test_utils::test_context_with_http_client, http::reqwest::mock::MockHttpClient,
-        key_manager::test_utils::test_keys,
-    };
+    use crate::http::reqwest::mock::MockHttpClient;
     use http::Method;
     use reqwest::{Request, Response};
-    use url::Url;
 
     use super::BundlerConfig;
 

@@ -15,7 +15,6 @@ use url::Url;
 
 use validator::{
     bundler::BundlerConfig,
-    database::models::Bundle,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig},
 };
