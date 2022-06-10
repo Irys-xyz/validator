@@ -2617,7 +2617,6 @@ dependencies = [
  "awc",
  "base64",
  "bb8",
- "bigint",
  "bundlr-sdk",
  "bytes",
  "cargo-husky",

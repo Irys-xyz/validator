@@ -15,7 +15,6 @@ avro-rs = "0.13.0"
 awc = "3.0.0-beta.14"
 base64 = "0.13.0"
 bb8 = "0.7.1"
-bigint = "4.4.3"
 bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "feature/bundler-validation" }
 bytes = "1.1.0"
 clap = { version = "3.1.2", features = ["derive", "env"] }
