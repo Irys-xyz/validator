@@ -12,7 +12,7 @@ use crate::{
     cron::arweave::{Arweave, ArweaveContext},
     database::queries,
     http::reqwest::ReqwestClient,
-    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager},
+    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager, KeyManagerAccess},
     server::{self, RuntimeContext},
     state::{SharedValidatorState, ValidatorStateAccess},
 };
@@ -93,6 +93,12 @@ impl<HttpClient> BundlerAccess for AppContext<HttpClient> {
 impl<HttpClient> ArweaveAccess for AppContext<HttpClient> {
     fn arweave(&self) -> &Arweave {
         &self.arweave_client
+    }
+}
+
+impl<HttpClient> KeyManagerAccess<InMemoryKeyManager> for AppContext<HttpClient> {
+    fn get_key_manager(&self) -> &InMemoryKeyManager {
+        self.key_manager.as_ref()
     }
 }
 
