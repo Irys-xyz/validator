@@ -91,7 +91,7 @@ fn public_only_jwk_from_rsa_n(encoded_n: &str) -> Result<JsonWebKey, DecodeError
     Ok(JsonWebKey::new(Key::RSA {
         public: RsaPublic {
             e: PublicExponent,
-            n: BASE64URL_NOPAD.decode(encoded_n.as_bytes().into())?.into(),
+            n: BASE64URL_NOPAD.decode(encoded_n.as_bytes())?.into(),
         },
         private: None,
     }))
