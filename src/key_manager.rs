@@ -10,6 +10,13 @@ use openssl::{
     sign,
 };
 
+pub trait KeyManagerAccess<KeyManager>
+where
+    KeyManager: self::KeyManager,
+{
+    fn get_key_manager(&self) -> &KeyManager;
+}
+
 pub trait KeyManager {
     fn bundler_address(&self) -> &str;
     fn validator_address(&self) -> &str;

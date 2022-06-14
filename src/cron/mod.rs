@@ -6,7 +6,7 @@ mod slasher;
 mod transactions;
 mod validate;
 
-use crate::{context, database::queries, http};
+use crate::{context, database::queries, http, key_manager};
 use futures::{join, Future};
 use paris::{error, info};
 use std::time::Duration;
@@ -14,13 +14,15 @@ use std::time::Duration;
 use self::error::ValidatorCronError;
 
 // Update contract state
-pub async fn run_crons<Context, HttpClient>(ctx: Context)
+pub async fn run_crons<Context, HttpClient, KeyManager>(ctx: Context)
 where
     Context: queries::QueryContext
         + arweave::ArweaveContext<HttpClient>
         + context::ArweaveAccess
-        + context::BundlerAccess,
+        + context::BundlerAccess
+        + key_manager::KeyManagerAccess<KeyManager>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+    KeyManager: key_manager::KeyManager,
 {
     info!("Validator starting ...");
     join!(

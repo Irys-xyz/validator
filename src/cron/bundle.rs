@@ -9,20 +9,14 @@ use crate::context::{ArweaveAccess, BundlerAccess};
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
-use crate::http;
+use crate::key_manager::KeyManagerAccess;
 use crate::types::Validator;
+use crate::{http, key_manager};
 use awc::Client;
 use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
 use bundlr_sdk::verify::types::Item;
-use bundlr_sdk::JWK;
 use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
-use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
-use lazy_static::lazy_static;
-use openssl::hash::MessageDigest;
-use openssl::pkey::{PKey, Public};
-use openssl::rsa::Padding;
-use openssl::sign;
 use paris::{error, info};
 use serde::{Deserialize, Serialize};
 
@@ -33,11 +27,17 @@ pub struct TxReceipt {
     signature: String,
 }
 
-pub async fn validate_bundler<Context, HttpClient>(ctx: &Context) -> Result<(), ValidatorCronError>
+pub async fn validate_bundler<Context, HttpClient, KeyManager>(
+    ctx: &Context,
+) -> Result<(), ValidatorCronError>
 where
-    Context:
-        queries::QueryContext + arweave::ArweaveContext<HttpClient> + ArweaveAccess + BundlerAccess,
+    Context: queries::QueryContext
+        + arweave::ArweaveContext<HttpClient>
+        + ArweaveAccess
+        + BundlerAccess
+        + KeyManagerAccess<KeyManager>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+    KeyManager: key_manager::KeyManager,
 {
     let arweave = ctx.arweave();
     let bundler = ctx.bundler();
@@ -55,7 +55,7 @@ where
 
     let txs_req = &txs_req.unwrap().0;
     for bundle in txs_req {
-        let res = validate_bundle(ctx, &arweave, bundle).await;
+        let res = validate_bundle(ctx, arweave, bundle).await;
         if let Err(err) = res {
             match err {
                 ValidatorCronError::TxNotFound => todo!(),
@@ -71,14 +71,18 @@ where
     Ok(())
 }
 
-async fn validate_bundle<Context, HttpClient>(
+async fn validate_bundle<Context, HttpClient, KeyManager>(
     ctx: &Context,
     arweave: &Arweave,
     bundle: &ArweaveTx,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + ArweaveContext<HttpClient> + BundlerAccess,
+    Context: queries::QueryContext
+        + ArweaveContext<HttpClient>
+        + BundlerAccess
+        + KeyManagerAccess<KeyManager>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+    KeyManager: key_manager::KeyManager,
 {
     let block_ok = check_bundle_block(bundle);
     if let Err(err) = block_ok {
@@ -178,13 +182,14 @@ where
     Ok(())
 }
 
-async fn verify_bundle_tx<Context>(
+async fn verify_bundle_tx<Context, KeyManager>(
     ctx: &Context,
     bundle_tx: &Item,
     current_block: Option<u128>,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext,
+    Context: queries::QueryContext + KeyManagerAccess<KeyManager>,
+    KeyManager: key_manager::KeyManager,
 {
     let tx = get_tx(ctx, &bundle_tx.tx_id).await;
     let mut tx_receipt: Option<TxReceipt> = None;
@@ -207,7 +212,7 @@ where
 
     match tx_receipt {
         Some(receipt) => {
-            let tx_is_ok = verify_tx_receipt(&receipt).unwrap();
+            let tx_is_ok = verify_tx_receipt(ctx.get_key_manager(), &receipt).unwrap();
             // FIXME: don't use unwrap
             if tx_is_ok && receipt.block <= current_block.unwrap() {
                 if let Err(_err) = insert_tx_in_db(
@@ -230,7 +235,6 @@ where
         }
         None => {
             // TODO: handle unfound txreceipt
-            ()
         }
     }
 
@@ -261,7 +265,13 @@ async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError
     Err(ValidatorCronError::TxNotFound)
 }
 
-fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
+fn verify_tx_receipt<KeyManager>(
+    key_manager: &KeyManager,
+    tx_receipt: &TxReceipt,
+) -> std::io::Result<bool>
+where
+    KeyManager: key_manager::KeyManager,
+{
     pub const BUNDLR_AS_BUFFER: &[u8] = "Bundlr".as_bytes();
 
     let block = tx_receipt.block.to_string().as_bytes().to_vec();
@@ -276,32 +286,11 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     ]))
     .unwrap();
 
-    // TODO: remove this lazy static and use KeyManager from context
-    lazy_static! {
-        static ref PUBLIC: PKey<Public> = {
-            let jwk = JsonWebKey::new(Key::RSA {
-                public: RsaPublic {
-                    e: PublicExponent,
-                    n: BASE64URL_NOPAD
-                        .decode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes().into())
-                        .expect("Failed to decode bundler's public key")
-                        .into(),
-                },
-                private: None,
-            });
-
-            PKey::public_key_from_der(jwk.key.to_der().as_slice()).unwrap()
-        };
-    };
-
     let sig = BASE64URL_NOPAD
         .decode(tx_receipt.signature.as_bytes())
         .unwrap();
 
-    let mut verifier = sign::Verifier::new(MessageDigest::sha256(), &PUBLIC).unwrap();
-    verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
-    verifier.update(&message).unwrap();
-    Ok(verifier.verify(&sig).unwrap_or(false))
+    Ok(key_manager.verify_bundler_signature(&message, &sig))
 }
 
 pub async fn validate_transactions(bundler: &Bundler) -> Result<(), ValidatorCronError> {
@@ -331,10 +320,7 @@ mod tests {
         key_manager::test_utils::test_keys,
     };
     use http::Method;
-    use paris::error;
     use reqwest::{Request, Response};
-    use std::fs::{self, File};
-    use std::io::{BufRead, BufReader, Read};
 
     use super::validate_bundler;
 

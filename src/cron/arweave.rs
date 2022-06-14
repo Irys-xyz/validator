@@ -168,8 +168,7 @@ impl Arweave {
         let mut buffer = File::create(&file_path).unwrap();
 
         let uri =
-            http::uri::Uri::from_str(&format!("{}{}", self.get_host(), transaction_id).to_string())
-                .unwrap();
+            http::uri::Uri::from_str(&format!("{}{}", self.get_host(), transaction_id)).unwrap();
         let req: http::Request<String> = http::request::Builder::new()
             .method(http::Method::GET)
             .uri(uri)
