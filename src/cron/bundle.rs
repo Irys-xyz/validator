@@ -17,7 +17,7 @@ use bundlr_sdk::verify::types::Item;
 use bundlr_sdk::JWK;
 use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
-use jsonwebkey::JsonWebKey;
+use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use lazy_static::lazy_static;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Public};
@@ -276,18 +276,21 @@ fn verify_tx_receipt(tx_receipt: &TxReceipt) -> std::io::Result<bool> {
     ]))
     .unwrap();
 
+    // TODO: remove this lazy static and use KeyManager from context
     lazy_static! {
         static ref PUBLIC: PKey<Public> = {
-            let jwk = JWK {
-                kty: "RSA",
-                e: "AQAB",
-                n: std::env::var("BUNDLER_PUBLIC").unwrap(),
-            };
+            let jwk = JsonWebKey::new(Key::RSA {
+                public: RsaPublic {
+                    e: PublicExponent,
+                    n: BASE64URL_NOPAD
+                        .decode(std::env::var("BUNDLER_PUBLIC").unwrap().as_bytes().into())
+                        .expect("Failed to decode bundler's public key")
+                        .into(),
+                },
+                private: None,
+            });
 
-            let p = serde_json::to_string(&jwk).unwrap();
-            let key: JsonWebKey = p.parse().unwrap();
-
-            PKey::public_key_from_der(key.key.to_der().as_slice()).unwrap()
+            PKey::public_key_from_der(jwk.key.to_der().as_slice()).unwrap()
         };
     };
 
