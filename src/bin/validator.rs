@@ -2,7 +2,7 @@
 extern crate diesel_migrations;
 
 use clap::Parser;
-use data_encoding::BASE64URL_NOPAD;
+use data_encoding::{DecodeError, BASE64URL_NOPAD};
 use diesel::{
     r2d2::{self, ConnectionManager},
     sqlite::SqliteConnection,
@@ -88,6 +88,16 @@ fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
     }
 }
 
+fn public_only_jwk_from_rsa_n(encoded_n: &str) -> Result<JsonWebKey, DecodeError> {
+    Ok(JsonWebKey::new(Key::RSA {
+        public: RsaPublic {
+            e: PublicExponent,
+            n: BASE64URL_NOPAD.decode(encoded_n.as_bytes().into())?.into(),
+        },
+        private: None,
+    }))
+}
+
 struct Keys(JsonWebKey, JsonWebKey);
 
 impl InMemoryKeyManagerConfig for Keys {
@@ -107,16 +117,7 @@ impl From<&CliOpts> for AppContext {
             file.parse().unwrap()
         } else {
             let n = config.bundler_public.as_ref().unwrap();
-            JsonWebKey::new(Key::RSA {
-                public: RsaPublic {
-                    e: PublicExponent,
-                    n: BASE64URL_NOPAD
-                        .decode(n.as_bytes().into())
-                        .expect("Failed to decode bundler's public key")
-                        .into(),
-                },
-                private: None,
-            })
+            public_only_jwk_from_rsa_n(n).expect("Failed to decode bundler key")
         };
 
         let validator_jwk: JsonWebKey = {
@@ -169,4 +170,23 @@ async fn main() -> () {
         paris::info!("Running with server");
         run_server(ctx.clone()).await.unwrap()
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::public_only_jwk_from_rsa_n;
+
+    #[test]
+    fn when_building_jwk_from_encoded_public_key_then_serialized_n_matches() {
+        let encoded_n = "sq9JbppKLlAKtQwalfX5DagnGMlTirditXk7y4jgoeA7DEM0Z6cVPE5xMQ9kz_T9VppP6BFHtHyZCZODercEVWipzkr36tfQkR5EDGUQyLivdxUzbWgVkzw7D27PJEa4cd1Uy6r18rYLqERgbRvAZph5YJZmpSJk7r3MwnQquuktjvSpfCLFwSxP1w879-ss_JalM9ICzRi38henONio8gll6GV9-omrWwRMZer_15bspCK5txCwpY137nfKwKD5YBAuzxxcj424M7zlSHlsafBwaRwFbf8gHtW03iJER4lR4GxeY0WvnYaB3KDISHQp53a9nlbmiWO5WcHHYsR83OT2eJ0Pl3RWA-_imk_SNwGQTCjmA6tf_UVwL8HzYS2iyuu85b7iYK9ZQoh8nqbNC6qibICE4h9Fe3bN7AgitIe9XzCTOXDfMr4ahjC8kkqJ1z4zNAI6-Leei_Mgd8JtZh2vqFNZhXK0lSadFl_9Oh3AET7tUds2E7s-6zpRPd9oBZu6-kNuHDRJ6TQhZSwJ9ZO5HYsccb_G_1so72aXJymR9ggJgWr4J3bawAYYnqmvmzGklYOlE_5HVnMxf-UxpT7ztdsHbc9QEH6W2bzwxbpjTczEZs3JCCB3c-NewNHsj9PYM3b5tTlTNP9kNAwPZHWpt11t79LuNkNGt9LfOek";
+
+        let jwk = public_only_jwk_from_rsa_n(encoded_n).expect("Failed to decode public key");
+
+        let json_str = serde_json::to_string(&jwk).unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        let n = json.get("n").unwrap().as_str().unwrap();
+
+        assert_eq!(encoded_n, n);
+    }
 }
