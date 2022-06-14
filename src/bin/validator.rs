@@ -69,6 +69,13 @@ struct CliOpts {
 
     #[clap(long, env = "ARWEAVE_URL")]
     arweave_url: Option<Url>,
+
+    #[clap(
+        long,
+        env = "CONTRACT_GATEWAY",
+        default_value = "http://127.0.0.1:3000"
+    )]
+    contract_gateway_url: Url,
 }
 
 fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
@@ -136,14 +143,20 @@ impl From<&CliOpts> for AppContext {
             embedded_migrations::run(&pool.get().unwrap()).unwrap();
         }
 
+        let arweave_url = match &config.arweave_url {
+            Some(url) => url,
+            None => unreachable!(),
+        };
+
         Self::new(
             key_manager,
             pool,
             config.listen,
             state,
             reqwest::Client::new(),
-            config.arweave_url.as_ref(),
+            arweave_url,
             &config.bundler_url,
+            &config.contract_gateway_url,
         )
     }
 }

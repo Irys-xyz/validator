@@ -14,7 +14,8 @@ async-stream = "0.3.2"
 avro-rs = "0.13.0"
 awc = "3.0"
 base64 = "0.13.0"
-bundlr-sdk =  { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "master" }
+bundlr-contracts-validators = { git = "https:github.com/Bundlr-Network/contracts-rust.git", branch = "master" }
+bundlr-sdk = { git = "https://github.com/Bundlr-Network/rust-sdk.git", branch = "master" }
 bytes = "1.1.0"
 clap = { version = "3.1.2", features = ["derive", "env"] }
 data-encoding = { version = "2.3.2", features = [ "alloc" ] }
@@ -45,6 +46,10 @@ url = { version = "0.2.2", optional = true }
 version = "1"
 default-features = false
 features = ["user-hooks"]
+
+# Uncomment to build against local copy of contracts
+#[patch."https:github.com/Bundlr-Network/contracts-rust.git"]
+#bundlr-contracts-validators = { path = "../contracts-rust/validators"}
 
 [features]
 default = ["reqwest-client"]

@@ -125,6 +125,10 @@ where
     Context: self::Config<KeyManager> + RuntimeContext + Send,
     KeyManager: key_manager::KeyManager,
 {
+    // FIXME: checking role should be a function of block height
+    // we probably need to track role for previous, current and next epochs
+    // to allow bundler node and this validator to see new blocks at different
+    // times
     if ctx.get_validator_state().role() != ValidatorRole::Cosigner {
         return Ok(HttpResponse::BadRequest().finish());
     }
