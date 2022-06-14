@@ -3,6 +3,13 @@ use futures::future::BoxFuture;
 #[cfg(feature = "reqwest-client")]
 pub mod reqwest;
 
+pub trait ClientAccess<HttpClient>
+where
+    HttpClient: Client,
+{
+    fn get_http_client(&self) -> &HttpClient;
+}
+
 pub trait Client {
     type Request;
     type Response;
