@@ -3,6 +3,8 @@ use futures::future::BoxFuture;
 #[cfg(feature = "reqwest-client")]
 pub mod reqwest;
 
+pub use http::{method, request, response};
+
 pub trait ClientAccess<HttpClient>
 where
     HttpClient: Client,
@@ -22,6 +24,7 @@ pub trait Client {
 pub mod mock {
     use std::{
         fmt,
+        pin::Pin,
         sync::{Arc, Mutex},
     };
 
@@ -31,7 +34,14 @@ pub mod mock {
 
     struct Handler<Request, Response> {
         matcher: fn(&Request) -> bool,
-        response_builder: fn(&Request) -> Response,
+        response_builder: Pin<Box<dyn Fn(&Request) -> Response>>,
+    }
+
+    unsafe impl<Request, Response> Send for Handler<Request, Response>
+    where
+        Request: Send,
+        Response: Send,
+    {
     }
 
     pub struct Call<Request> {
@@ -49,11 +59,12 @@ pub mod mock {
             Self { client, matcher }
         }
 
-        pub fn then(
-            self,
-            response_builder: fn(&Request) -> Response,
-        ) -> MockClient<Request, Response> {
-            self.client.register_handler(self.matcher, response_builder)
+        pub fn then<F>(self, response_builder: F) -> MockClient<Request, Response>
+        where
+            F: Fn(&Request) -> Response + 'static,
+        {
+            self.client
+                .register_handler(self.matcher, Box::pin(response_builder))
         }
     }
 
@@ -101,7 +112,7 @@ pub mod mock {
         fn register_handler(
             self,
             matcher: fn(&Request) -> bool,
-            response_builder: fn(&Request) -> Response,
+            response_builder: Pin<Box<dyn Fn(&Request) -> Response>>,
         ) -> Self {
             {
                 let mut state = self.state.lock().unwrap();
@@ -144,7 +155,6 @@ pub mod mock {
                 .find(|handler| (handler.matcher)(&req));
             match handler {
                 Some(handler) => {
-                    eprintln!("found handler");
                     let res = (handler.response_builder)(&req);
                     if let Some(call) = state
                         .calls
