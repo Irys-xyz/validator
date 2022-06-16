@@ -78,6 +78,7 @@ struct CliOpts {
     contract_gateway_url: Url,
 }
 
+// TODO: merge config should return own type as returned arweave_url can never be None
 fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
     let arweave_url = match config.arweave_url {
         Some(u) => Some(u),
@@ -116,6 +117,7 @@ impl InMemoryKeyManagerConfig for Keys {
     }
 }
 
+// TODO: This does not belong here, create a new time for AppContextConfig and move to context module
 impl From<&CliOpts> for AppContext {
     fn from(config: &CliOpts) -> Self {
         let bundler_jwk = if let Some(key_file_path) = &config.bundler_key {

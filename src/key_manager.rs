@@ -18,8 +18,8 @@ where
 }
 
 pub trait KeyManager {
-    fn bundler_address(&self) -> &str;
-    fn validator_address(&self) -> &str;
+    fn bundler_address(&self) -> &str; // FIXME: replace with Address
+    fn validator_address(&self) -> &str; // FIXME: replace with Address
     fn validator_sign(&self, data: &[u8]) -> Vec<u8>;
     // FIXME: return Result
     fn verify_bundler_signature(&self, data: &[u8], sig: &[u8]) -> bool;
