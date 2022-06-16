@@ -1366,7 +1366,6 @@ checksum = "e6012d540c5baa3589337a98ce73408de9b5a25ec9fc2c6fd6be8f0d39e0ca5a"
 dependencies = [
  "autocfg",
  "hashbrown",
- "serde",
 ]
 
 [[package]]
@@ -2730,19 +2729,7 @@ dependencies = [
  "cfg-if",
  "log",
  "pin-project-lite",
- "tracing-attributes",
  "tracing-core",
-]
-
-[[package]]
-name = "tracing-attributes"
-version = "0.1.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc6b8ad3567499f98a1db7a752b07a7c8c7c7c34c332ec00effb2b0027974b7c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -2859,7 +2846,6 @@ dependencies = [
  "actix-web",
  "anyhow",
  "async-stream",
- "avro-rs",
  "awc",
  "base64",
  "bundlr-contracts-validators",
@@ -2876,11 +2862,7 @@ dependencies = [
  "futures",
  "futures-util",
  "http",
- "indexmap",
  "jsonwebkey",
- "lazy_static",
- "num-traits",
- "once_cell",
  "openssl",
  "paris",
  "reqwest",
@@ -2888,7 +2870,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "tracing",
  "url",
 ]
 
