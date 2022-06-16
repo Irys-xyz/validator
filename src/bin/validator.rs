@@ -69,8 +69,16 @@ struct CliOpts {
 
     #[clap(long, env = "ARWEAVE_URL")]
     arweave_url: Option<Url>,
+
+    #[clap(
+        long,
+        env = "CONTRACT_GATEWAY",
+        default_value = "http://127.0.0.1:3000"
+    )]
+    contract_gateway_url: Url,
 }
 
+// TODO: merge config should return own type as returned arweave_url can never be None
 fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
     let arweave_url = match config.arweave_url {
         Some(u) => Some(u),
@@ -109,6 +117,7 @@ impl InMemoryKeyManagerConfig for Keys {
     }
 }
 
+// TODO: This does not belong here, create a new time for AppContextConfig and move to context module
 impl From<&CliOpts> for AppContext {
     fn from(config: &CliOpts) -> Self {
         let bundler_jwk = if let Some(key_file_path) = &config.bundler_key {
@@ -136,14 +145,20 @@ impl From<&CliOpts> for AppContext {
             embedded_migrations::run(&pool.get().unwrap()).unwrap();
         }
 
+        let arweave_url = match &config.arweave_url {
+            Some(url) => url,
+            None => unreachable!(),
+        };
+
         Self::new(
             key_manager,
             pool,
             config.listen,
             state,
             reqwest::Client::new(),
-            config.arweave_url.as_ref(),
+            arweave_url,
             &config.bundler_url,
+            &config.contract_gateway_url,
         )
     }
 }

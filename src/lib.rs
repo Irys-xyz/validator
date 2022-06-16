@@ -7,6 +7,7 @@ pub mod bundle;
 pub mod bundler;
 pub mod consts;
 pub mod context;
+pub mod contract_gateway;
 pub mod cron;
 pub mod database;
 pub mod http;

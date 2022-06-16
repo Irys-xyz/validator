@@ -9,6 +9,7 @@ use url::Url;
 
 use crate::{
     bundler::Bundler,
+    contract_gateway::ContractGateway,
     cron::arweave::{Arweave, ArweaveContext},
     database::queries,
     http::reqwest::ReqwestClient,
@@ -23,6 +24,10 @@ pub trait BundlerAccess {
 
 pub trait ArweaveAccess {
     fn arweave(&self) -> &Arweave;
+}
+
+pub trait ValidatorAddressAccess {
+    fn get_validator_address(&self) -> &str;
 }
 
 struct Keys(JsonWebKey, JsonWebKey);
@@ -46,6 +51,7 @@ pub struct AppContext<HttpClient = ReqwestClient> {
     http_client: HttpClient,
     arweave_client: Arweave,
     bundler_connection: Bundler,
+    contract_gateway: ContractGateway,
 }
 
 impl AppContext {
@@ -55,21 +61,21 @@ impl AppContext {
         listen: SocketAddr,
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
-        arweave_url: Option<&Url>,
+        arweave_url: &Url,
         bundler_url: &Url,
+        contract_gateway_url: &Url,
     ) -> Self {
         let bundler_connection = Bundler {
             address: key_manager.bundler_address().to_owned(),
             url: bundler_url.to_string(),
         };
 
-        let arweave = match arweave_url {
-            Some(url) => url,
-            None => todo!(),
+        let arweave_client = Arweave {
+            url: arweave_url.clone(),
         };
 
-        let arweave_client = Arweave {
-            url: arweave.clone(),
+        let contract_gateway = ContractGateway {
+            url: contract_gateway_url.clone(),
         };
 
         Self {
@@ -80,6 +86,7 @@ impl AppContext {
             http_client: ReqwestClient::new(http_client),
             arweave_client,
             bundler_connection,
+            contract_gateway,
         }
     }
 }
@@ -109,6 +116,12 @@ where
 {
     fn get_http_client(&self) -> &HttpClient {
         &self.http_client
+    }
+}
+
+impl<HttpClient> crate::contract_gateway::ContractGatewayAccess for AppContext<HttpClient> {
+    fn contract_gateway(&self) -> &ContractGateway {
+        &self.contract_gateway
     }
 }
 
@@ -174,6 +187,12 @@ impl<HttpClient> ValidatorStateAccess for AppContext<HttpClient> {
     }
 }
 
+impl<HttpClient> ValidatorAddressAccess for AppContext<HttpClient> {
+    fn get_validator_address(&self) -> &str {
+        self.key_manager.validator_address()
+    }
+}
+
 #[cfg(test)]
 pub mod test_utils {
     use std::{str::FromStr, sync::Arc};
@@ -181,6 +200,7 @@ pub mod test_utils {
     use super::AppContext;
     use crate::{
         bundler::Bundler,
+        contract_gateway::ContractGateway,
         cron::arweave::Arweave,
         http::reqwest::mock::MockHttpClient,
         key_manager::{InMemoryKeyManager, KeyManager},
@@ -213,7 +233,11 @@ pub mod test_utils {
         };
 
         let arweave_client = Arweave {
-            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str("http://example.com").unwrap(),
+        };
+
+        let contract_gateway = ContractGateway {
+            url: Url::from_str("http://localhost:3000").unwrap(),
         };
 
         AppContext {
@@ -224,6 +248,7 @@ pub mod test_utils {
             http_client: MockHttpClient::new(|_, _| false),
             arweave_client,
             bundler_connection,
+            contract_gateway,
         }
     }
 
@@ -249,7 +274,11 @@ pub mod test_utils {
         };
 
         let arweave_client = Arweave {
-            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str("http://example.com").unwrap(),
+        };
+
+        let contract_gateway = ContractGateway {
+            url: Url::from_str("http://localhost:3000").unwrap(),
         };
 
         AppContext {
@@ -260,6 +289,7 @@ pub mod test_utils {
             http_client,
             arweave_client,
             bundler_connection,
+            contract_gateway,
         }
     }
 }

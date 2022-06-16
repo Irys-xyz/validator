@@ -18,8 +18,8 @@ where
 }
 
 pub trait KeyManager {
-    fn bundler_address(&self) -> &str;
-    fn validator_address(&self) -> &str;
+    fn bundler_address(&self) -> &str; // FIXME: replace with Address
+    fn validator_address(&self) -> &str; // FIXME: replace with Address
     fn validator_sign(&self, data: &[u8]) -> Vec<u8>;
     // FIXME: return Result
     fn verify_bundler_signature(&self, data: &[u8], sig: &[u8]) -> bool;
@@ -160,9 +160,11 @@ impl KeyManager for InMemoryKeyManager {
 
 #[cfg(test)]
 pub mod test_utils {
+    use data_encoding::BASE64URL_NOPAD;
     use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPrivate, RsaPublic};
-    use openssl::pkey::{PKey, Private};
+    use openssl::pkey::{PKey, Private, Public};
     use openssl::rsa::Rsa;
+    use openssl::sha::Sha256;
 
     use super::{split_jwk, split_public_only_jwk, InMemoryKeyManager};
 
@@ -185,7 +187,7 @@ pub mod test_utils {
         )
     }
 
-    pub(super) fn bundler_key() -> (JsonWebKey, PKey<Private>) {
+    pub fn bundler_key() -> (JsonWebKey, PKey<Private>) {
         let rsa = Rsa::generate(2048).unwrap();
         let n = rsa.n().to_vec().into();
 
@@ -204,7 +206,7 @@ pub mod test_utils {
         )
     }
 
-    pub(super) fn validator_key() -> JsonWebKey {
+    pub fn validator_key() -> JsonWebKey {
         let rsa = Rsa::generate(2048).unwrap();
 
         JsonWebKey::new(Key::RSA {
@@ -222,23 +224,8 @@ pub mod test_utils {
             }),
         })
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use data_encoding::BASE64URL_NOPAD;
-    use jsonwebkey::JsonWebKey;
-    use openssl::hash::MessageDigest;
-    use openssl::pkey::{PKey, Private, Public};
-    use openssl::rsa::Padding;
-    use openssl::sha::Sha256;
-    use openssl::sign::{Signer, Verifier};
-
-    use crate::key_manager::test_utils::validator_key;
-
-    use super::test_utils::bundler_key;
-
-    fn to_private_key(key: &JsonWebKey) -> Result<PKey<Private>, ()> {
+    pub fn to_private_key(key: &JsonWebKey) -> Result<PKey<Private>, ()> {
         let der: Vec<u8> = key.key.try_to_der().map_err(|err| {
             eprintln!("Failed to extract der: {:?}", err);
             ()
@@ -249,7 +236,7 @@ mod tests {
         })
     }
 
-    fn to_public_key(jwk: &JsonWebKey) -> Result<PKey<Public>, ()> {
+    pub fn to_public_key(jwk: &JsonWebKey) -> Result<PKey<Public>, ()> {
         let der = if jwk.key.is_private() {
             let pub_key = jwk.key.to_public().ok_or_else(|| {
                 eprintln!("Key has no public part");
@@ -270,13 +257,24 @@ mod tests {
         })
     }
 
-    fn to_address(key: &JsonWebKey) -> Result<String, ()> {
+    pub fn to_address(key: &JsonWebKey) -> Result<String, ()> {
         let pub_key: PKey<Public> = to_public_key(key)?;
         let mut hasher = Sha256::new();
         hasher.update(&pub_key.rsa().unwrap().n().to_vec());
         let hash = hasher.finish();
         Ok(BASE64URL_NOPAD.encode(&hash))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use openssl::hash::MessageDigest;
+    use openssl::rsa::Padding;
+    use openssl::sign::{Signer, Verifier};
+
+    use super::test_utils::{
+        bundler_key, to_address, to_private_key, to_public_key, validator_key,
+    };
 
     #[test]
     fn extract_address_from_public_key_only_jwk() {

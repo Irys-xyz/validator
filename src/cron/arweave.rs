@@ -174,11 +174,11 @@ impl Arweave {
             .unwrap();
 
         let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-        let res: reqwest::Response = ctx.get_client().execute(req).await.expect("request failed");
+        let res: reqwest::Response = ctx.get_client().execute(req).await.expect("request failed"); // FIXME: should not panic, handle failure
         if res.status().is_success() {
             return res.json().await;
         } else {
-            Err(res.error_for_status().err().unwrap())
+            Err(res.error_for_status().err().unwrap()) // FIXME: do not unwrap
         }
     }
 
@@ -194,7 +194,7 @@ impl Arweave {
         info!("Downloading bundle {} content", &transaction_id);
         let raw_path = format!("./bundles/{}", transaction_id);
         let file_path = Path::new(&raw_path);
-        let mut buffer = File::create(&file_path).unwrap();
+        let mut buffer = File::create(&file_path).unwrap(); // FIXME: change to expect
 
         let uri =
             http::uri::Uri::from_str(&format!("{}{}", self.get_host(), transaction_id)).unwrap();
@@ -206,7 +206,7 @@ impl Arweave {
 
         let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
         let mut res: reqwest::Response =
-            ctx.get_client().execute(req).await.expect("request failed");
+            ctx.get_client().execute(req).await.expect("request failed"); // FIXME: should not panic, handle failure
         if res.status().is_success() {
             while let Some(chunk) = res.chunk().await? {
                 match buffer.write(&chunk) {
@@ -218,7 +218,7 @@ impl Arweave {
             }
             return Ok(String::from(file_path.to_string_lossy()));
         } else {
-            Err(res.error_for_status().err().unwrap())
+            Err(res.error_for_status().err().unwrap()) // FIXME: do not unwrap
         }
     }
 
@@ -245,6 +245,8 @@ impl Arweave {
         );
 
         let url = format!("{}graphql?query={}", self.get_host(), raw_query);
+
+        // TODO: why to build object by parsing from string and then turn it later back to string
         let data = format!(
             "{{\"query\":\"{}\",\"variables\":{}}}",
             raw_query, raw_variables
@@ -254,14 +256,14 @@ impl Arweave {
         let body = serde_json::from_str::<ReqBody>(&data);
         let req = reqwest_client
             .post(&url)
-            .json(&body.unwrap())
+            .json(&body.unwrap()) // FIXME: do not unwrap
             .build()
             .unwrap();
-        let res = ctx.get_client().execute(req).await.unwrap();
+        let res = ctx.get_client().execute(req).await.unwrap(); // FIXME: do not unwrap
 
         match res.status() {
             reqwest::StatusCode::OK => {
-                let res: GraphqlQueryResponse = res.json().await.unwrap();
+                let res: GraphqlQueryResponse = res.json().await.unwrap(); // FIXME: do not unwrap
                 let mut txs: Vec<Transaction> = Vec::<Transaction>::new();
                 let mut end_cursor: Option<String> = None;
                 for tx in &res.data.transactions.edges {
@@ -367,7 +369,7 @@ mod tests {
 
         let raw_path = "./bundles/tx_id";
         let file_path = Path::new(raw_path).is_file();
-        assert!(file_path);
+        assert!(file_path); // FIXME: remove/replace use of assert
         match fs::remove_file(raw_path) {
             Ok(_) => (),
             Err(_) => println!(

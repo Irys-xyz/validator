@@ -6,7 +6,12 @@ mod slasher;
 mod transactions;
 mod validate;
 
-use crate::{context, database::queries, http, key_manager};
+use crate::{
+    context,
+    contract_gateway::{self, ContractGatewayError},
+    database::queries,
+    http, key_manager,
+};
 use derive_more::{Display, Error};
 use futures::{join, Future};
 use paris::{error, info};
@@ -17,24 +22,32 @@ use self::{arweave::ArweaveError, error::ValidatorCronError};
 #[derive(Debug, Display, Error, Clone, PartialEq)]
 pub enum CronJobError {
     ArweaveError(ArweaveError),
+    ContractGatewayError(ContractGatewayError),
     ValidatorError(ValidatorCronError),
 }
 
 // Update contract state
 pub async fn run_crons<Context, HttpClient, KeyManager>(ctx: Context)
 where
-    Context: queries::QueryContext
-        + arweave::ArweaveContext<HttpClient>
+    Context: arweave::ArweaveContext<HttpClient>
         + context::ArweaveAccess
-        + http::ClientAccess<HttpClient>
         + context::BundlerAccess
-        + key_manager::KeyManagerAccess<KeyManager>,
+        + context::ValidatorAddressAccess
+        + contract_gateway::ContractGatewayAccess
+        + http::ClientAccess<HttpClient>
+        + key_manager::KeyManagerAccess<KeyManager>
+        + queries::QueryContext,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
 {
     info!("Validator starting ...");
     join!(
-        //create_cron("update contract", contract::update_contract, 30),
+        create_cron(
+            &ctx,
+            "check contract updates",
+            contract::check_contract_updates,
+            30
+        ),
         create_cron(&ctx, "sync network info", arweave::sync_network_info, 30),
         create_cron(&ctx, "validate bundler", validate::validate, 2 * 60),
         create_cron(
