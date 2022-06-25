@@ -8,9 +8,9 @@ use jsonwebkey::JsonWebKey;
 use url::Url;
 
 use crate::{
+    arweave::{Arweave, ArweaveContext},
     bundler::Bundler,
     contract_gateway::ContractGateway,
-    cron::arweave::{Arweave, ArweaveContext},
     database::queries,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager, KeyManagerAccess},
@@ -199,9 +199,9 @@ pub mod test_utils {
 
     use super::AppContext;
     use crate::{
+        arweave::Arweave,
         bundler::Bundler,
         contract_gateway::ContractGateway,
-        cron::arweave::Arweave,
         http::reqwest::mock::MockHttpClient,
         key_manager::{InMemoryKeyManager, KeyManager},
         state::generate_state,

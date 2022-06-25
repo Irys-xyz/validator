@@ -1,4 +1,4 @@
-pub mod arweave;
+mod arweave;
 mod bundle;
 mod clear_transactions;
 mod contract;
@@ -18,7 +18,8 @@ use futures::{join, Future};
 use log::{error, info};
 use std::time::Duration;
 
-use self::{arweave::ArweaveError, error::ValidatorCronError};
+use self::error::ValidatorCronError;
+use crate::arweave::{ArweaveContext, ArweaveError};
 
 #[derive(Debug, Display, Error, Clone, PartialEq)]
 pub enum CronJobError {
@@ -30,7 +31,7 @@ pub enum CronJobError {
 // Update contract state
 pub async fn run_crons<Context, HttpClient, KeyManager>(ctx: Context)
 where
-    Context: arweave::ArweaveContext<HttpClient>
+    Context: ArweaveContext<HttpClient>
         + context::ArweaveAccess
         + context::BundlerAccess
         + context::ValidatorAddressAccess

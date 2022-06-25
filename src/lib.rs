@@ -4,6 +4,7 @@ extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
 
+pub mod arweave;
 pub mod bundle;
 pub mod bundler;
 pub mod consts;

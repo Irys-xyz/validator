@@ -1,12 +1,12 @@
 extern crate diesel;
 
-use super::arweave::{self, ArweaveContext};
 use super::error::ValidatorCronError;
 use super::slasher::vote_slash;
 use super::transactions::get_transactions;
+use crate::arweave::{self, ArweaveContext};
+use crate::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::bundler::Bundler;
 use crate::context::{ArweaveAccess, BundlerAccess};
-use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
 use crate::http::{self, Client};
