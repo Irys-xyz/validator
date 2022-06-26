@@ -13,7 +13,7 @@ indent_size = 4
 # denotes a line break in Markdown
 trim_trailing_whitespace = false
 
-[*.yml]
+[*.{yml,yaml}]
 indent_size = 2
 
 [**.{ts,json,js}]
