@@ -45,7 +45,7 @@ impl InMemoryKeyManagerConfig for Keys {
 #[derive(Clone)]
 pub struct AppContext<HttpClient = ReqwestClient> {
     key_manager: Arc<InMemoryKeyManager>,
-    db_conn_pool: r2d2::Pool<ConnectionManager<SqliteConnection>>,
+    db_conn_pool: Arc<r2d2::Pool<ConnectionManager<SqliteConnection>>>,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
     http_client: HttpClient,
@@ -80,7 +80,7 @@ impl AppContext {
 
         Self {
             key_manager: Arc::new(key_manager),
-            db_conn_pool,
+            db_conn_pool: Arc::new(db_conn_pool),
             listen,
             validator_state,
             http_client: ReqwestClient::new(http_client),
@@ -242,7 +242,7 @@ pub mod test_utils {
 
         AppContext {
             key_manager: Arc::new(key_manager),
-            db_conn_pool,
+            db_conn_pool: Arc::new(db_conn_pool),
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client: MockHttpClient::new(|_, _| false),
@@ -283,7 +283,7 @@ pub mod test_utils {
 
         AppContext {
             key_manager: Arc::new(key_manager),
-            db_conn_pool,
+            db_conn_pool: Arc::new(db_conn_pool),
             listen: "127.0.0.1:10000".parse().unwrap(),
             validator_state: state,
             http_client,
