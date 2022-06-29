@@ -10,6 +10,7 @@ use diesel::{
 use diesel_migrations::embed_migrations;
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
+use serde::Deserialize;
 use std::{fs, net::SocketAddr, str::FromStr};
 use url::Url;
 
@@ -40,15 +41,6 @@ struct CliOpts {
     /// Listen address for the server
     #[clap(short, long, env, default_value = "127.0.0.1:10000")]
     listen: SocketAddr,
-
-    /// Bundler public key as string
-    #[clap(
-        long,
-        env = "BUNDLER_PUBLIC",
-        conflicts_with = "bundler-key",
-        required_unless_present = "bundler-key"
-    )]
-    bundler_public: Option<String>,
 
     /// Path to JWK file holding bundler public key
     #[clap(
@@ -117,6 +109,9 @@ impl InMemoryKeyManagerConfig for Keys {
     }
 }
 
+#[derive(Deserialize)]
+struct PublicResponse { n: String }
+
 // TODO: This does not belong here, create a new time for AppContextConfig and move to context module
 impl From<&CliOpts> for AppContext {
     fn from(config: &CliOpts) -> Self {
@@ -124,8 +119,11 @@ impl From<&CliOpts> for AppContext {
             let file = fs::read_to_string(key_file_path).unwrap();
             file.parse().unwrap()
         } else {
-            let n = config.bundler_public.as_ref().unwrap();
-            public_only_jwk_from_rsa_n(n).expect("Failed to decode bundler key")
+            let n_response = reqwest::blocking::get(format!("{}/public", &config.bundler_url))
+                .expect("Couldn't get public key from bundler")
+                .json::<PublicResponse>()
+                .expect("Couldn't parse public key response from bundler");
+            public_only_jwk_from_rsa_n(&n_response.n).expect("Failed to decode bundler key")
         };
 
         let validator_jwk: JsonWebKey = {
