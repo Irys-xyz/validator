@@ -1,8 +1,9 @@
 /target
 /.vscode
 .env
-wallet.json
+wallet*.json
 /bundles/*
 !/bundles/.gitkeep
 !/bundles/test_bundle
-/db/validator.db
+/db/validator*.db
+/test
