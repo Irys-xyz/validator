@@ -245,8 +245,12 @@ mod tests {
     };
 
     use super::SignRequest;
-    fn test_message(signing_key: &PKey<Private>, block: u128, validator: String) -> SignRequest {
-        let tx = "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Zk";
+    fn test_message(
+        signing_key: &PKey<Private>,
+        block: u128,
+        validator: String,
+        tx: &str,
+    ) -> SignRequest {
         let size = 0usize;
         let fee = 0u128;
         let currency = "FOO";
@@ -292,6 +296,7 @@ mod tests {
             &bundler_private_key,
             500,
             key_manager.validator_address().to_string(),
+            "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Z1",
         );
 
         assert!(msg.verify(&key_manager).await.unwrap())
@@ -309,6 +314,7 @@ mod tests {
             &bundler_private_key,
             500,
             key_manager.validator_address().to_string(),
+            "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Z2",
         );
 
         let sig = msg.sign(&key_manager).await.unwrap();
@@ -347,6 +353,7 @@ mod tests {
             &bundler_private_key,
             400,
             ctx.key_manager().validator_address().to_string(),
+            "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Z3",
         );
 
         let req = TestRequest::post()
@@ -380,6 +387,7 @@ mod tests {
             &bundler_private_key,
             406,
             ctx.key_manager().validator_address().to_string(),
+            "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Z4",
         );
 
         let req = TestRequest::post()
@@ -409,6 +417,7 @@ mod tests {
             &bundler_private_key,
             400,
             ctx.key_manager().validator_address().to_string(),
+            "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Z5",
         );
 
         let req = TestRequest::post()
@@ -439,6 +448,7 @@ mod tests {
                 &wrong_key,
                 400,
                 ctx.key_manager().validator_address().to_string(),
+                "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Z6",
             )
         };
 
@@ -471,6 +481,7 @@ mod tests {
                 // Use bundler address, main point is to use any other address,
                 // but validator's correct one
                 ctx.key_manager().bundler_address().to_string(),
+                "dtdOmHZMOtGb2C0zLqLBUABrONDZ5rzRh9NengT1-Z7",
             )
         };
 

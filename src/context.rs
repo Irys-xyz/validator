@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use diesel::{
     r2d2::{self, ConnectionManager, PooledConnection},
-    SqliteConnection,
+    PgConnection,
 };
 use jsonwebkey::JsonWebKey;
 use url::Url;
@@ -45,7 +45,7 @@ impl InMemoryKeyManagerConfig for Keys {
 #[derive(Clone)]
 pub struct AppContext<HttpClient = ReqwestClient> {
     key_manager: Arc<InMemoryKeyManager>,
-    db_conn_pool: r2d2::Pool<ConnectionManager<SqliteConnection>>,
+    db_conn_pool: r2d2::Pool<ConnectionManager<PgConnection>>,
     listen: SocketAddr,
     validator_state: SharedValidatorState,
     http_client: HttpClient,
@@ -57,7 +57,7 @@ pub struct AppContext<HttpClient = ReqwestClient> {
 impl AppContext {
     pub fn new(
         key_manager: InMemoryKeyManager,
-        db_conn_pool: r2d2::Pool<ConnectionManager<SqliteConnection>>,
+        db_conn_pool: r2d2::Pool<ConnectionManager<PgConnection>>,
         listen: SocketAddr,
         validator_state: SharedValidatorState,
         http_client: reqwest::Client,
@@ -136,7 +136,7 @@ where
 }
 
 impl<HttpClient> queries::QueryContext for AppContext<HttpClient> {
-    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<PgConnection>> {
         self.db_conn_pool
             .get()
             .expect("Failed to get connection from database connection pool")
@@ -148,7 +148,7 @@ impl<HttpClient> queries::QueryContext for AppContext<HttpClient> {
 }
 
 impl<HttpClient> RuntimeContext for AppContext<HttpClient> {
-    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>> {
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<PgConnection>> {
         self.db_conn_pool
             .get()
             .expect("Failed to get connection from database connection pool")
@@ -208,22 +208,18 @@ pub mod test_utils {
     };
     use diesel::{
         r2d2::{self, ConnectionManager},
-        SqliteConnection,
+        Connection, PgConnection,
     };
     use url::Url;
 
     embed_migrations!();
 
     pub fn test_context(key_manager: InMemoryKeyManager) -> AppContext<MockHttpClient> {
-        let connection_mgr = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let mgr =
+            ConnectionManager::<PgConnection>::new("postgres://bundlr:bundlr@localhost/bundlr");
         let db_conn_pool = r2d2::Pool::builder()
-            .build(connection_mgr)
-            .expect("Failed to create SQLite connection pool.");
-
-        {
-            let conn = db_conn_pool.get().unwrap();
-            embedded_migrations::run(&conn).unwrap();
-        }
+            .build(mgr)
+            .expect("could not build connection pool");
 
         let state = generate_state();
 
@@ -256,15 +252,11 @@ pub mod test_utils {
         key_manager: InMemoryKeyManager,
         http_client: HttpClient,
     ) -> AppContext<HttpClient> {
-        let connection_mgr = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let mgr =
+            ConnectionManager::<PgConnection>::new("postgres://bundlr:bundlr@localhost/bundlr");
         let db_conn_pool = r2d2::Pool::builder()
-            .build(connection_mgr)
-            .expect("Failed to create SQLite connection pool.");
-
-        {
-            let conn = db_conn_pool.get().unwrap();
-            embedded_migrations::run(&conn).unwrap();
-        }
+            .build(mgr)
+            .expect("could not build connection pool");
 
         let state = generate_state();
 
