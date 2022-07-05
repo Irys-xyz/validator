@@ -6,13 +6,14 @@ use diesel::{
 };
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
+use sysinfo::{System, SystemExt};
 use std::{fs, net::SocketAddr, str::FromStr, process};
 use url::Url;
 
 use validator::{
     bundler::BundlerConfig,
     http::reqwest::ReqwestClient,
-    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig},
+    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig}, hardware::HardwareCheck,
 };
 use validator::{context::AppContext, state::generate_state};
 use validator::{cron::run_crons, server::run_server};
@@ -157,8 +158,11 @@ impl From<&CliOpts> for AppContext {
 
 #[actix_web::main]
 async fn main() -> () {
-    let enough_resources = true;
+    let sys = System::new_all();
+    System::print_hardware_info(&sys);
+    let enough_resources = System::has_enough_resources(&sys);
     if !enough_resources {
+        println!("Not enough resources, check Readme file");
         process::exit(1);
     }
 
