@@ -207,9 +207,9 @@ pub mod test_utils {
         state::generate_state,
     };
     use diesel::{
-        r2d2::{self, ConnectionManager},
-        Connection, PgConnection,
+        r2d2::{self, ConnectionManager}, PgConnection,
     };
+    use diesel_migrations::embed_migrations;
     use url::Url;
 
     embed_migrations!();

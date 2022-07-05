@@ -6,7 +6,7 @@ use diesel::{
 };
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
-use std::{fs, net::SocketAddr, str::FromStr};
+use std::{fs, net::SocketAddr, str::FromStr, process};
 use url::Url;
 
 use validator::{
@@ -119,7 +119,8 @@ impl From<&CliOpts> for AppContext {
             file.parse().unwrap()
         } else {
             let n = config.bundler_public.as_ref().unwrap();
-            public_only_jwk_from_rsa_n(n).expect("Failed to decode bundler key")
+            let fmt_n = &n.replace(&['(', ')', ',', '\"', '.', ';', ':', '\''][..], "");
+            public_only_jwk_from_rsa_n(fmt_n).expect("Failed to decode bundler key")
         };
 
         let validator_jwk: JsonWebKey = {
@@ -127,6 +128,7 @@ impl From<&CliOpts> for AppContext {
             file.parse().unwrap()
         };
 
+        print!("{:?}", &config.database_url);
         let key_manager = InMemoryKeyManager::new(&Keys(bundler_jwk, validator_jwk));
         let state = generate_state();
 
@@ -155,6 +157,11 @@ impl From<&CliOpts> for AppContext {
 
 #[actix_web::main]
 async fn main() -> () {
+    let enough_resources = true;
+    if !enough_resources {
+        process::exit(1);
+    }
+
     dotenv::dotenv().ok();
 
     env_logger::init_from_env(Env::default().default_filter_or("info"));
