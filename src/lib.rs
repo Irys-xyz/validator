@@ -11,6 +11,7 @@ pub mod contract_gateway;
 pub mod cron;
 pub mod database;
 pub mod http;
+pub mod hardware;
 pub mod key_manager;
 pub mod server;
 pub mod state;
