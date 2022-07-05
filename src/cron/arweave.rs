@@ -191,7 +191,7 @@ impl Arweave {
         Context: ArweaveContext<HttpClient>,
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
     {
-        info!("Downloading bundle {} content", &transaction_id);
+        info!("Downloading bundle {} content ...", &transaction_id);
         let raw_path = format!("./bundles/{}", transaction_id);
         let file_path = Path::new(&raw_path);
         let mut buffer = File::create(&file_path).unwrap(); // FIXME: change to expect
@@ -216,6 +216,7 @@ impl Arweave {
                     }
                 }
             }
+            info!("Downloaded {} content!", &transaction_id);
             return Ok(String::from(file_path.to_string_lossy()));
         } else {
             Err(res.error_for_status().err().unwrap()) // FIXME: do not unwrap
