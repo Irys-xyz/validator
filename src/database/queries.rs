@@ -30,7 +30,7 @@ where
     diesel::insert_into(bundle::table)
         .values(&new_bundle)
         .execute(&conn)
-        .unwrap_or_else(|_| panic!("Error inserting new bundle {}", &new_bundle.id));
+        .unwrap_or_else(|err| panic!("Error inserting new bundle {}: {:?}", &new_bundle.id, &err));
 
     Ok(())
 }
