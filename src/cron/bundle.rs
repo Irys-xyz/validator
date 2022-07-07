@@ -17,7 +17,7 @@ use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
 use bundlr_sdk::verify::types::Item;
 use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
 use data_encoding::BASE64URL_NOPAD;
-use paris::{error, info};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Debug)]

@@ -6,8 +6,9 @@ use diesel::{
 };
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
+use log::info;
 use serde::Deserialize;
-use std::{fs, net::SocketAddr, process, str::FromStr};
+use std::{fs, net::SocketAddr, str::FromStr};
 use sysinfo::{System, SystemExt};
 use url::Url;
 
@@ -121,9 +122,9 @@ impl IntoAsync<AppContext> for CliOpts {
             .await
             .expect("Couldn't parse public key response from bundler");
 
+        let public_response = serde_json::from_str::<PublicResponse>(&n_response).unwrap();
         let bundler_jwk =
-            public_only_jwk_from_rsa_n(&n_response).expect("Failed to decode bundler key");
-
+            public_only_jwk_from_rsa_n(&public_response.n).expect("Failed to decode bundler key");
         let validator_jwk: JsonWebKey = {
             let file = fs::read_to_string(&self.validator_key).unwrap();
             file.parse().unwrap()
@@ -162,8 +163,8 @@ fn main() -> () {
         System::print_hardware_info(&sys);
         // let enough_resources = System::has_enough_resources(&sys);
         // if !enough_resources {
-        // println!("Hardware check failed: Not enough resources, check Readme file");
-        // process::exit(1);
+        //     println!("Hardware check failed: Not enough resources, check Readme file");
+        //     process::exit(1);
         // }
 
         dotenv::dotenv().ok();
@@ -178,12 +179,12 @@ fn main() -> () {
         let ctx = config.into_async().await;
 
         if !config.no_cron {
-            paris::info!("Running with cron");
+            info!("Running with cron");
             tokio::task::spawn_local(run_crons(ctx.clone()));
         };
 
         if !config.no_server {
-            paris::info!("Running with server");
+            info!("Running with server");
             run_server(ctx.clone()).await.unwrap()
         };
     });
