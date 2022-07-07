@@ -189,6 +189,7 @@ where
     Context: queries::QueryContext + KeyManagerAccess<KeyManager>,
     KeyManager: key_manager::KeyManager,
 {
+    // TODO: this code needs review, especially error handling for get_tx looks suspicious
     let tx = get_tx(ctx, &bundle_tx.tx_id).await;
     let mut tx_receipt: Option<TxReceipt> = None;
     if tx.is_ok() {
@@ -213,19 +214,18 @@ where
             let tx_is_ok = verify_tx_receipt(ctx.get_key_manager(), &receipt).unwrap();
             // FIXME: don't use unwrap
             if tx_is_ok && receipt.block <= current_block.unwrap() {
-                if let Err(_err) = insert_tx_in_db(
-                    ctx,
-                    &NewTransaction {
-                        id: receipt.tx_id,
-                        epoch: Epoch(0),
-                        block_promised: receipt.block.into(),
-                        block_actual: current_block.map(Block),
-                        signature: receipt.signature.as_bytes().to_vec(),
-                        validated: true,
-                        bundle_id: Some(bundle_tx.tx_id.clone()),
-                    },
-                ) {
-                    // FIXME: missing error handling
+                let tx = NewTransaction {
+                    id: receipt.tx_id,
+                    epoch: Epoch(0),
+                    block_promised: receipt.block.into(),
+                    block_actual: current_block.map(Block),
+                    signature: receipt.signature.as_bytes().to_vec(),
+                    validated: true,
+                    bundle_id: Some(bundle_tx.tx_id.clone()),
+                };
+                if let Err(err) = insert_tx_in_db(ctx, &tx) {
+                    error!("Error inserting new tx {}, Error: {}", tx.id, err);
+                    // TODO: is it enough to log this error?
                 }
             } else {
                 // TODO: vote slash
