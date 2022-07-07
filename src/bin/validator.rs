@@ -1,13 +1,9 @@
-#[macro_use]
-extern crate diesel_migrations;
-
 use clap::Parser;
 use data_encoding::{DecodeError, BASE64URL_NOPAD};
 use diesel::{
     r2d2::{self, ConnectionManager},
-    sqlite::SqliteConnection,
+    PgConnection,
 };
-use diesel_migrations::embed_migrations;
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use std::{fs, net::SocketAddr, str::FromStr};
@@ -21,8 +17,6 @@ use validator::{
 use validator::{context::AppContext, state::generate_state};
 use validator::{cron::run_crons, server::run_server};
 
-embed_migrations!();
-
 #[derive(Clone, Debug, Parser)]
 struct CliOpts {
     /// Do not start cron jobs
@@ -34,7 +28,7 @@ struct CliOpts {
     no_server: bool,
 
     /// Database connection URL
-    #[clap(long, env, default_value = "validator.db")]
+    #[clap(long, env)]
     database_url: String,
 
     /// Listen address for the server
@@ -136,14 +130,10 @@ impl From<&CliOpts> for AppContext {
         let key_manager = InMemoryKeyManager::new(&Keys(bundler_jwk, validator_jwk));
         let state = generate_state();
 
-        let connection_mgr = ConnectionManager::<SqliteConnection>::new(&config.database_url);
+        let connection_mgr = ConnectionManager::<PgConnection>::new(&config.database_url);
         let pool = r2d2::Pool::builder()
             .build(connection_mgr)
             .expect("Failed to create SQLite connection pool.");
-
-        if &config.database_url == ":memory:" {
-            embedded_migrations::run(&pool.get().unwrap()).unwrap();
-        }
 
         let arweave_url = match &config.arweave_url {
             Some(url) => url,

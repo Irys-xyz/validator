@@ -1,0 +1,37 @@
+name: Rust Build & Test
+
+on: push
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_DB: bundlr
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: bundlr
+          POSTGRES_PASSWORD: bundlr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Diesel CLI
+        run: cargo install diesel_cli --no-default-features --features postgres
+      - name: Build
+        run: cargo build --verbose
+      - name: Run migrations
+        run: diesel migration run --database-url postgres://bundlr:bundlr@localhost/bundlr
+      - name: Run tests
+        run: cargo test --verbose
