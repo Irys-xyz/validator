@@ -67,7 +67,7 @@ fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
         Some(u) => Some(u),
         None => {
             let url_string = format!("https://{}", bundler_config.gateway);
-            let url = url::Url::from_str(&url_string).unwrap();
+            let url = url::Url::from_str(&url_string).expect("Invalid Arweave gateway URL");
             Some(url)
         }
     };
