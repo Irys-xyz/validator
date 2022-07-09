@@ -112,7 +112,8 @@ pub trait IntoAsync<T> {
 #[async_trait::async_trait]
 impl IntoAsync<AppContext> for CliOpts {
     async fn into_async(&self) -> AppContext {
-        let n_response = reqwest::get(format!("{}/public", &self.bundler_url))
+        dbg!("Requesting {}public", &self.bundler_url);
+        let n_response = reqwest::get(format!("{}public", &self.bundler_url))
             .await
             .expect("Couldn't get public key from bundler")
             .text()
