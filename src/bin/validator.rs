@@ -76,6 +76,7 @@ fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
 }
 
 fn public_only_jwk_from_rsa_n(encoded_n: &str) -> Result<JsonWebKey, DecodeError> {
+    dbg!("Decoding {}", encoded_n);
     Ok(JsonWebKey::new(Key::RSA {
         public: RsaPublic {
             e: PublicExponent,
@@ -106,7 +107,6 @@ struct PublicResponse {
 pub trait IntoAsync<T> {
     async fn into_async(&self) -> T;
 }
-
 // TODO: This does not belong here, create a new time for AppContextConfig and move to context module
 
 #[async_trait::async_trait]
@@ -134,7 +134,7 @@ impl IntoAsync<AppContext> for CliOpts {
 
         let pool = r2d2::Pool::builder()
             .build(connection_mgr)
-            .expect("Failed to create SQLite connection pool.");
+            .expect("Failed to create database connection pool.");
 
         let arweave_url = match &self.arweave_url {
             Some(url) => url,
