@@ -115,12 +115,12 @@ impl IntoAsync<AppContext> for CliOpts {
         let n_response = reqwest::get(format!("{}/public", &self.bundler_url))
             .await
             .expect("Couldn't get public key from bundler")
-            .json::<PublicResponse>()
+            .text()
             .await
             .expect("Couldn't parse public key response from bundler");
 
         let bundler_jwk =
-            public_only_jwk_from_rsa_n(&n_response.n).expect("Failed to decode bundler key");
+            public_only_jwk_from_rsa_n(&n_response).expect("Failed to decode bundler key");
 
         let validator_jwk: JsonWebKey = {
             let file = fs::read_to_string(&self.validator_key).unwrap();
@@ -154,24 +154,24 @@ impl IntoAsync<AppContext> for CliOpts {
     }
 }
 
-
 fn main() -> () {
     actix_rt::System::new().block_on(async {
         dotenv::dotenv().ok();
 
         env_logger::init_from_env(Env::default().default_filter_or("info"));
-    
+
         let http_client = ReqwestClient::new(reqwest::Client::new());
         let app_config = CliOpts::parse();
-        let bundler_config = BundlerConfig::fetch_config(http_client, &app_config.bundler_url).await;
+        let bundler_config =
+            BundlerConfig::fetch_config(http_client, &app_config.bundler_url).await;
         let config = merge_configs(app_config, bundler_config);
         let ctx = config.into_async().await;
-    
+
         if !config.no_cron {
             paris::info!("Running with cron");
             tokio::task::spawn_local(run_crons(ctx.clone()));
         };
-    
+
         if !config.no_server {
             paris::info!("Running with server");
             run_server(ctx.clone()).await.unwrap()
