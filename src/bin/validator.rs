@@ -130,15 +130,11 @@ impl IntoAsync<AppContext> for CliOpts {
         let key_manager = InMemoryKeyManager::new(&Keys(bundler_jwk, validator_jwk));
         let state = generate_state();
 
-        let connection_mgr = ConnectionManager::<SqliteConnection>::new(&self.database_url);
+        let connection_mgr = ConnectionManager::<PgConnection>::new(&self.database_url);
 
         let pool = r2d2::Pool::builder()
             .build(connection_mgr)
             .expect("Failed to create SQLite connection pool.");
-
-        if &self.database_url == ":memory:" {
-            embedded_migrations::run(&pool.get().unwrap()).unwrap();
-        }
 
         let arweave_url = match &self.arweave_url {
             Some(url) => url,
