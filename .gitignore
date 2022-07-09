@@ -7,3 +7,4 @@ wallet.json
 !/bundles/test_bundle
 /db/validator.db
 .history
+.devcontainer

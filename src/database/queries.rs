@@ -10,7 +10,7 @@ use crate::database::schema::{bundle, transactions};
 use crate::state::ValidatorStateAccess;
 
 pub trait QueryContext: ValidatorStateAccess {
-    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<PgConnection>>;
     fn current_epoch(&self) -> u128;
 }
 

@@ -38,16 +38,16 @@
 CREATE TABLE IF NOT EXISTS bundle (
     id CHAR(43) NOT NULL,
     owner_address CHAR(43) NOT NULL,
-    block_height BINARY(16) NOT NULL,
+    block_height BYTEA NOT NULL,
     PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
     id CHAR(43) NOT NULL,
-    epoch BINARY(16) NOT NULL,
-    block_promised BINARY(16) NOT NULL,
-    block_actual BINARY(16),
-    signature BLOB NOT NULL,
+    epoch BYTEA NOT NULL,
+    block_promised BYTEA NOT NULL,
+    block_actual BYTEA,
+    signature BYTEA NOT NULL,
     validated BOOLEAN NOT NULL,
     bundle_id CHAR(43),
     PRIMARY KEY (id),
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS validators (
 CREATE TABLE IF NOT EXISTS leaders (
     address CHAR(43) NOT NULL,
     PRIMARY KEY(address),
-    FOREIGN KEY(address) REFERENCES validator(address)
+    FOREIGN KEY(address) REFERENCES validators(address)
 );
 
 CREATE INDEX epoch_transactions_idx ON transactions(epoch);
