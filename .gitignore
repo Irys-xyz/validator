@@ -6,3 +6,4 @@ wallet.json
 !/bundles/.gitkeep
 !/bundles/test_bundle
 /db/validator.db
+.devcontainer

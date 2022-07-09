@@ -29,7 +29,7 @@ struct CliOpts {
     no_server: bool,
 
     /// Database connection URL
-    #[clap(long, env, default_value = "validator.db")]
+    #[clap(long, env)]
     database_url: String,
 
     /// Listen address for the server
