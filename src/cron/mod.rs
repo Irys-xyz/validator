@@ -49,7 +49,7 @@ where
             30
         ),
         create_cron(&ctx, "sync network info", arweave::sync_network_info, 30),
-        create_cron(&ctx, "validate bundler", validate::validate, 2 * 60),
+        // create_cron(&ctx, "validate bundler", validate::validate, 2 * 60),
         create_cron(
             &ctx,
             "validate transactions",
