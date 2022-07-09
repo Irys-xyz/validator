@@ -10,7 +10,7 @@ use actix_web::{
 };
 use diesel::{
     r2d2::{ConnectionManager, PooledConnection},
-    SqliteConnection,
+    PgConnection,
 };
 use paris::info;
 use routes::get_tx::get_tx;
@@ -26,7 +26,7 @@ use crate::server::routes::test::set_state;
 
 pub trait RuntimeContext {
     fn bind_address(&self) -> &SocketAddr;
-    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<SqliteConnection>>;
+    fn get_db_connection(&self) -> PooledConnection<ConnectionManager<PgConnection>>;
 }
 
 pub async fn run_server<Context, KeyManager>(ctx: Context) -> std::io::Result<()>

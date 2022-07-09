@@ -1,7 +1,7 @@
 use super::schema::bundle;
 use super::schema::transactions;
+use diesel::pg::Pg;
 use diesel::sql_types::Binary;
-use diesel::sqlite::Sqlite;
 use diesel::types::FromSql;
 use diesel::types::IsNull;
 use diesel::types::ToSql;
@@ -36,20 +36,19 @@ impl TryFrom<&[u8]> for Epoch {
     }
 }
 
-impl FromSql<Binary, Sqlite> for Epoch {
+impl FromSql<Binary, Pg> for Epoch {
     fn from_sql(
-        bytes: Option<&<Sqlite as diesel::backend::Backend>::RawValue>,
+        bytes: Option<&<Pg as diesel::backend::Backend>::RawValue>,
     ) -> diesel::deserialize::Result<Self> {
         let bytes = bytes.ok_or_else(|| Box::new(DeserializationError::UnexpectedNull))?;
-        let bytes = bytes.read_blob();
         Epoch::try_from(bytes).map_err(|err| Box::new(err).into())
     }
 }
 
-impl ToSql<Binary, Sqlite> for Epoch {
+impl ToSql<Binary, Pg> for Epoch {
     fn to_sql<W: std::io::Write>(
         &self,
-        out: &mut diesel::serialize::Output<W, Sqlite>,
+        out: &mut diesel::serialize::Output<W, Pg>,
     ) -> diesel::serialize::Result {
         let bytes: [u8; 16] = self.0.to_ne_bytes();
         out.write(&bytes).map(|_| IsNull::No).map_err(Into::into)
@@ -87,20 +86,19 @@ impl From<Block> for u128 {
     }
 }
 
-impl FromSql<Binary, Sqlite> for Block {
+impl FromSql<Binary, Pg> for Block {
     fn from_sql(
-        bytes: Option<&<Sqlite as diesel::backend::Backend>::RawValue>,
+        bytes: Option<&<Pg as diesel::backend::Backend>::RawValue>,
     ) -> diesel::deserialize::Result<Self> {
         let bytes = bytes.ok_or_else(|| Box::new(DeserializationError::UnexpectedNull))?;
-        let bytes = bytes.read_blob();
         Block::try_from(bytes).map_err(|err| Box::new(err).into())
     }
 }
 
-impl ToSql<Binary, Sqlite> for Block {
+impl ToSql<Binary, Pg> for Block {
     fn to_sql<W: std::io::Write>(
         &self,
-        out: &mut diesel::serialize::Output<W, Sqlite>,
+        out: &mut diesel::serialize::Output<W, Pg>,
     ) -> diesel::serialize::Result {
         let bytes: [u8; 16] = self.0.to_ne_bytes();
         out.write(&bytes).map(|_| IsNull::No).map_err(Into::into)
@@ -147,23 +145,69 @@ pub struct NewTransaction {
 
 #[cfg(test)]
 mod tests {
-    use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection};
+    use std::sync::Once;
+
+    use diesel::{Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
 
     use crate::database::schema::transactions::dsl;
 
     use super::{Block, Epoch, NewTransaction, Transaction};
 
-    embed_migrations!();
+    static INIT: Once = Once::new();
+
+    fn initialize() {
+        INIT.call_once(|| {
+            let conn =
+                PgConnection::establish("postgres://bundlr:bundlr@localhost/bundlr").unwrap();
+            [
+                NewTransaction {
+                    id: "1111111111111111111111111111111111111111111".to_string(),
+                    epoch: Epoch(1),
+                    block_promised: Block(10),
+                    block_actual: None,
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+                NewTransaction {
+                    id: "2222222222222222222222222222222222222222222".to_string(),
+                    epoch: Epoch(2),
+                    block_promised: Block(20),
+                    block_actual: None,
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+                NewTransaction {
+                    id: "3333333333333333333333333333333333333333333".to_string(),
+                    epoch: Epoch(1),
+                    block_promised: Block(10),
+                    block_actual: Some(Block(9)),
+                    signature: "foo".as_bytes().to_vec(),
+                    validated: false,
+                    bundle_id: None,
+                },
+            ]
+            .iter()
+            .for_each(|tx| {
+                diesel::insert_into(dsl::transactions)
+                    .values(tx)
+                    .execute(&conn)
+                    .unwrap();
+            });
+        });
+    }
 
     #[test]
     fn insert_and_read_transaction() {
-        let conn = SqliteConnection::establish(":memory:").unwrap();
-        embedded_migrations::run(&conn).unwrap();
+        initialize();
+
+        let conn = PgConnection::establish("postgres://bundlr:bundlr@localhost/bundlr").unwrap();
 
         let tx = NewTransaction {
-            id: "foo".to_string(),
-            epoch: Epoch(340282366920938463463374607431768211455),
-            block_promised: Block(340282366920938463463374607431768211454),
+            id: "4444444444444444444444444444444444444444444".to_string(),
+            epoch: Epoch(2),
+            block_promised: Block(20),
             block_actual: None,
             signature: "foo".as_bytes().to_vec(),
             validated: false,
@@ -175,14 +219,17 @@ mod tests {
             .execute(&conn)
             .unwrap();
 
-        let result = dsl::transactions.load::<Transaction>(&conn).unwrap();
+        let result = dsl::transactions
+            .filter(dsl::id.eq("4444444444444444444444444444444444444444444"))
+            .load::<Transaction>(&conn)
+            .unwrap();
 
         assert_eq!(
             result[0],
             Transaction {
-                id: "foo".to_string(),
-                epoch: Epoch(340282366920938463463374607431768211455),
-                block_promised: Block(340282366920938463463374607431768211454),
+                id: "4444444444444444444444444444444444444444444".to_string(),
+                epoch: Epoch(2),
+                block_promised: Block(20),
                 block_actual: None,
                 signature: "foo".as_bytes().to_vec(),
                 validated: false,
@@ -193,54 +240,9 @@ mod tests {
 
     #[test]
     fn select_by_epoch() {
-        let conn = SqliteConnection::establish(":memory:").unwrap();
-        embedded_migrations::run(&conn).unwrap();
+        initialize();
 
-        [
-            NewTransaction {
-                id: "foo1".to_string(),
-                epoch: Epoch(1),
-                block_promised: Block(10),
-                block_actual: None,
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-            NewTransaction {
-                id: "foo2".to_string(),
-                epoch: Epoch(2),
-                block_promised: Block(20),
-                block_actual: None,
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-            NewTransaction {
-                id: "foo3".to_string(),
-                epoch: Epoch(1),
-                block_promised: Block(10),
-                block_actual: Some(Block(9)),
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-            NewTransaction {
-                id: "foo4".to_string(),
-                epoch: Epoch(2),
-                block_promised: Block(20),
-                block_actual: None,
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-        ]
-        .iter()
-        .for_each(|tx| {
-            diesel::insert_into(dsl::transactions)
-                .values(tx)
-                .execute(&conn)
-                .unwrap();
-        });
+        let conn = PgConnection::establish("postgres://bundlr:bundlr@localhost/bundlr").unwrap();
 
         let result = dsl::transactions
             .filter(dsl::epoch.eq(Epoch(1)))
@@ -251,7 +253,7 @@ mod tests {
             result,
             [
                 Transaction {
-                    id: "foo1".to_string(),
+                    id: "1111111111111111111111111111111111111111111".to_string(),
                     epoch: Epoch(1),
                     block_promised: Block(10),
                     block_actual: None,
@@ -260,7 +262,7 @@ mod tests {
                     bundle_id: None,
                 },
                 Transaction {
-                    id: "foo3".to_string(),
+                    id: "3333333333333333333333333333333333333333333".to_string(),
                     epoch: Epoch(1),
                     block_promised: Block(10),
                     block_actual: Some(Block(9)),
@@ -274,54 +276,9 @@ mod tests {
 
     #[test]
     fn sort_by_epoch() {
-        let conn = SqliteConnection::establish(":memory:").unwrap();
-        embedded_migrations::run(&conn).unwrap();
+        initialize();
 
-        [
-            NewTransaction {
-                id: "foo1".to_string(),
-                epoch: Epoch(1),
-                block_promised: Block(10),
-                block_actual: None,
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-            NewTransaction {
-                id: "foo2".to_string(),
-                epoch: Epoch(2),
-                block_promised: Block(20),
-                block_actual: None,
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-            NewTransaction {
-                id: "foo3".to_string(),
-                epoch: Epoch(1),
-                block_promised: Block(10),
-                block_actual: Some(Block(9)),
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-            NewTransaction {
-                id: "foo4".to_string(),
-                epoch: Epoch(2),
-                block_promised: Block(20),
-                block_actual: None,
-                signature: "foo".as_bytes().to_vec(),
-                validated: false,
-                bundle_id: None,
-            },
-        ]
-        .iter()
-        .for_each(|tx| {
-            diesel::insert_into(dsl::transactions)
-                .values(tx)
-                .execute(&conn)
-                .unwrap();
-        });
+        let conn = PgConnection::establish("postgres://bundlr:bundlr@localhost/bundlr").unwrap();
 
         let result = dsl::transactions
             .order_by(dsl::epoch)
@@ -332,7 +289,7 @@ mod tests {
             result,
             [
                 Transaction {
-                    id: "foo1".to_string(),
+                    id: "1111111111111111111111111111111111111111111".to_string(),
                     epoch: Epoch(1),
                     block_promised: Block(10),
                     block_actual: None,
@@ -341,7 +298,7 @@ mod tests {
                     bundle_id: None,
                 },
                 Transaction {
-                    id: "foo3".to_string(),
+                    id: "3333333333333333333333333333333333333333333".to_string(),
                     epoch: Epoch(1),
                     block_promised: Block(10),
                     block_actual: Some(Block(9)),
@@ -350,7 +307,7 @@ mod tests {
                     bundle_id: None,
                 },
                 Transaction {
-                    id: "foo2".to_string(),
+                    id: "2222222222222222222222222222222222222222222".to_string(),
                     epoch: Epoch(2),
                     block_promised: Block(20),
                     block_actual: None,
@@ -359,7 +316,7 @@ mod tests {
                     bundle_id: None,
                 },
                 Transaction {
-                    id: "foo4".to_string(),
+                    id: "4444444444444444444444444444444444444444444".to_string(),
                     epoch: Epoch(2),
                     block_promised: Block(20),
                     block_actual: None,

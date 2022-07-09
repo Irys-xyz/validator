@@ -1,15 +1,12 @@
-#[macro_use]
-extern crate diesel_migrations;
-
 use clap::Parser;
 use data_encoding::{DecodeError, BASE64URL_NOPAD};
 use diesel::{
     r2d2::{self, ConnectionManager},
-    sqlite::SqliteConnection,
+    PgConnection,
 };
-use diesel_migrations::embed_migrations;
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
+use serde::Deserialize;
 use std::{fs, net::SocketAddr, str::FromStr};
 use url::Url;
 
@@ -20,8 +17,6 @@ use validator::{
 };
 use validator::{context::AppContext, state::generate_state};
 use validator::{cron::run_crons, server::run_server};
-
-embed_migrations!();
 
 #[derive(Clone, Debug, Parser)]
 struct CliOpts {
@@ -34,30 +29,12 @@ struct CliOpts {
     no_server: bool,
 
     /// Database connection URL
-    #[clap(long, env, default_value = "validator.db")]
+    #[clap(long, env)]
     database_url: String,
 
     /// Listen address for the server
     #[clap(short, long, env, default_value = "127.0.0.1:42069")]
     listen: SocketAddr,
-
-    /// Bundler public key as string
-    #[clap(
-        long,
-        env = "BUNDLER_PUBLIC",
-        conflicts_with = "bundler-key",
-        required_unless_present = "bundler-key"
-    )]
-    bundler_public: Option<String>,
-
-    /// Path to JWK file holding bundler public key
-    #[clap(
-        long,
-        env = "BUNDLER_KEY",
-        conflicts_with = "bundler-public",
-        required_unless_present = "bundler-public"
-    )]
-    bundler_key: Option<String>,
 
     /// URL for the bundler connection
     #[clap(long, env = "BUNDLER_URL")]
@@ -70,10 +47,13 @@ struct CliOpts {
     #[clap(long, env = "ARWEAVE_URL")]
     arweave_url: Option<Url>,
 
+    #[clap(long)]
+    bundler_key: Option<Url>,
+
     #[clap(
         long,
         env = "CONTRACT_GATEWAY",
-        default_value = "http://127.0.0.1:3000"
+        default_value = "http://localhost:3000"
     )]
     contract_gateway_url: Url,
 }
@@ -96,6 +76,7 @@ fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
 }
 
 fn public_only_jwk_from_rsa_n(encoded_n: &str) -> Result<JsonWebKey, DecodeError> {
+    dbg!("Decoding {}", encoded_n);
     Ok(JsonWebKey::new(Key::RSA {
         public: RsaPublic {
             e: PublicExponent,
@@ -117,73 +98,86 @@ impl InMemoryKeyManagerConfig for Keys {
     }
 }
 
+#[derive(Deserialize)]
+struct PublicResponse {
+    n: String,
+}
+
+#[async_trait::async_trait]
+pub trait IntoAsync<T> {
+    async fn into_async(&self) -> T;
+}
 // TODO: This does not belong here, create a new time for AppContextConfig and move to context module
-impl From<&CliOpts> for AppContext {
-    fn from(config: &CliOpts) -> Self {
-        let bundler_jwk = if let Some(key_file_path) = &config.bundler_key {
-            let file = fs::read_to_string(key_file_path).unwrap();
-            file.parse().unwrap()
-        } else {
-            let n = config.bundler_public.as_ref().unwrap();
-            public_only_jwk_from_rsa_n(n).expect("Failed to decode bundler key")
-        };
+
+#[async_trait::async_trait]
+impl IntoAsync<AppContext> for CliOpts {
+    async fn into_async(&self) -> AppContext {
+        dbg!("Requesting {}public", &self.bundler_url);
+        let n_response = reqwest::get(format!("{}public", &self.bundler_url))
+            .await
+            .expect("Couldn't get public key from bundler")
+            .text()
+            .await
+            .expect("Couldn't parse public key response from bundler");
+
+        let bundler_jwk =
+            public_only_jwk_from_rsa_n(&n_response).expect("Failed to decode bundler key");
 
         let validator_jwk: JsonWebKey = {
-            let file = fs::read_to_string(&config.validator_key).unwrap();
+            let file = fs::read_to_string(&self.validator_key).unwrap();
             file.parse().unwrap()
         };
 
         let key_manager = InMemoryKeyManager::new(&Keys(bundler_jwk, validator_jwk));
         let state = generate_state();
 
-        let connection_mgr = ConnectionManager::<SqliteConnection>::new(&config.database_url);
+        let connection_mgr = ConnectionManager::<PgConnection>::new(&self.database_url);
+
         let pool = r2d2::Pool::builder()
             .build(connection_mgr)
-            .expect("Failed to create SQLite connection pool.");
+            .expect("Failed to create database connection pool.");
 
-        if &config.database_url == ":memory:" {
-            embedded_migrations::run(&pool.get().unwrap()).unwrap();
-        }
-
-        let arweave_url = match &config.arweave_url {
+        let arweave_url = match &self.arweave_url {
             Some(url) => url,
             None => unreachable!(),
         };
 
-        Self::new(
+        AppContext::new(
             key_manager,
             pool,
-            config.listen,
+            self.listen,
             state,
             reqwest::Client::new(),
             arweave_url,
-            &config.bundler_url,
-            &config.contract_gateway_url,
+            &self.bundler_url,
+            &self.contract_gateway_url,
         )
     }
 }
 
-#[actix_web::main]
-async fn main() -> () {
-    dotenv::dotenv().ok();
+fn main() -> () {
+    actix_rt::System::new().block_on(async {
+        dotenv::dotenv().ok();
 
-    env_logger::init_from_env(Env::default().default_filter_or("info"));
+        env_logger::init_from_env(Env::default().default_filter_or("info"));
 
-    let http_client = ReqwestClient::new(reqwest::Client::new());
-    let app_config = CliOpts::parse();
-    let bundler_config = BundlerConfig::fetch_config(http_client, &app_config.bundler_url).await;
-    let config = merge_configs(app_config, bundler_config);
-    let ctx = AppContext::from(&config);
+        let http_client = ReqwestClient::new(reqwest::Client::new());
+        let app_config = CliOpts::parse();
+        let bundler_config =
+            BundlerConfig::fetch_config(http_client, &app_config.bundler_url).await;
+        let config = merge_configs(app_config, bundler_config);
+        let ctx = config.into_async().await;
 
-    if !config.no_cron {
-        paris::info!("Running with cron");
-        tokio::task::spawn_local(run_crons(ctx.clone()));
-    };
+        if !config.no_cron {
+            paris::info!("Running with cron");
+            tokio::task::spawn_local(run_crons(ctx.clone()));
+        };
 
-    if !config.no_server {
-        paris::info!("Running with server");
-        run_server(ctx.clone()).await.unwrap()
-    };
+        if !config.no_server {
+            paris::info!("Running with server");
+            run_server(ctx.clone()).await.unwrap()
+        };
+    });
 }
 
 #[cfg(test)]

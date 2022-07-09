@@ -1,0 +1,3 @@
+[submodule "contracts-rust"]
+	path = contracts-rust
+	url = https://github.com/Bundlr-Network/contracts-rust
