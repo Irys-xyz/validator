@@ -9,6 +9,6 @@ FROM rust:1.62 as final
 
 COPY --from=build /target/release/validator .
 
-EXPOSE 1234
+EXPOSE 42069
 
 CMD ["./validator"]

@@ -16,7 +16,7 @@ The following environment variables need to be defined:
 
 ```
 DATABASE_URL="./db/validator.db"                                // Path to store database file
-PORT=1234                                                       // The port exposed
+PORT=42069                                                       // The port exposed
 BUNDLER_PUBLIC="OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"    // Bundler public key
 VALIDATOR_KEY="./wallet.json"                                   // Path to arweave wallet file
 BUNDLER_URL="https://node1.bundlr.network"                      // Bundler Node url
