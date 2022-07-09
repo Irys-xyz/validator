@@ -42,15 +42,6 @@ struct CliOpts {
     #[clap(short, long, env, default_value = "127.0.0.1:10000")]
     listen: SocketAddr,
 
-    /// Path to JWK file holding bundler public key
-    #[clap(
-        long,
-        env = "BUNDLER_KEY",
-        conflicts_with = "bundler-public",
-        required_unless_present = "bundler-public"
-    )]
-    bundler_key: Option<String>,
-
     /// URL for the bundler connection
     #[clap(long, env = "BUNDLER_URL")]
     bundler_url: Url,
@@ -65,7 +56,7 @@ struct CliOpts {
     #[clap(
         long,
         env = "CONTRACT_GATEWAY",
-        default_value = "http://127.0.0.1:3000"
+        default_value = "https://contract-gateway.testnet1.bundlr.network"
     )]
     contract_gateway_url: Url,
 }
