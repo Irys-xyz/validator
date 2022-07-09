@@ -101,21 +101,20 @@ impl InMemoryKeyManagerConfig for Keys {
 }
 
 #[derive(Deserialize)]
-struct PublicResponse { n: String }
+struct PublicResponse {
+    n: String,
+}
 
 // TODO: This does not belong here, create a new time for AppContextConfig and move to context module
 impl From<&CliOpts> for AppContext {
     fn from(config: &CliOpts) -> Self {
-        let bundler_jwk = if let Some(key_file_path) = &config.bundler_key {
-            let file = fs::read_to_string(key_file_path).unwrap();
-            file.parse().unwrap()
-        } else {
-            let n_response = reqwest::blocking::get(format!("{}/public", &config.bundler_url))
-                .expect("Couldn't get public key from bundler")
-                .json::<PublicResponse>()
-                .expect("Couldn't parse public key response from bundler");
-            public_only_jwk_from_rsa_n(&n_response.n).expect("Failed to decode bundler key")
-        };
+        let n_response = reqwest::blocking::get(format!("{}/public", &config.bundler_url))
+            .expect("Couldn't get public key from bundler")
+            .json::<PublicResponse>()
+            .expect("Couldn't parse public key response from bundler");
+
+        let bundler_jwk =
+            public_only_jwk_from_rsa_n(&n_response.n).expect("Failed to decode bundler key");
 
         let validator_jwk: JsonWebKey = {
             let file = fs::read_to_string(&config.validator_key).unwrap();
