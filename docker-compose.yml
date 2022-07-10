@@ -9,7 +9,8 @@ services:
       - POSTGRES_USER=bundlr
       - POSTGRES_PASSWORD=bundlr
       - POSTGRES_DATABASE=bundlr
-  app:
+
+  validator:
     build: .
     ports:
       - "127.0.0.1:42069:42069"
@@ -20,3 +21,16 @@ services:
       - /bundles:/bundles
     depends_on:
       - postgres
+      - gateway
+
+  gateway:
+    build: ./contracts-rust
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./wallet.json:/wallet.json
+    depends_on:
+      - postgres
+    
