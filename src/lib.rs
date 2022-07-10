@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate diesel;
+#[allow(unused_imports)]
 #[macro_use]
 extern crate diesel_migrations;
 

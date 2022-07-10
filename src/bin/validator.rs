@@ -128,7 +128,6 @@ impl IntoAsync<AppContext> for CliOpts {
             file.parse().unwrap()
         };
 
-        print!("{:?}", &config.database_url);
         let key_manager = InMemoryKeyManager::new(&Keys(bundler_jwk, validator_jwk));
         let state = generate_state();
 
@@ -158,6 +157,14 @@ impl IntoAsync<AppContext> for CliOpts {
 
 fn main() -> () {
     actix_rt::System::new().block_on(async {
+        let sys = System::new_all();
+        System::print_hardware_info(&sys);
+        let enough_resources = System::has_enough_resources(&sys);
+        if !enough_resources {
+            println!("Not enough resources, check Readme file");
+            process::exit(1);
+        }
+        
         dotenv::dotenv().ok();
 
         env_logger::init_from_env(Env::default().default_filter_or("info"));
