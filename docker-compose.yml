@@ -4,20 +4,23 @@ services:
   postgres:
     image: postgres:14.2
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    env_file:
+      - .env
     environment:
-      - POSTGRES_USER=bundlr
-      - POSTGRES_PASSWORD=bundlr
-      - POSTGRES_DATABASE=bundlr
+      - POSTGRES_USER=${POSTGRES_USER:-bundlr}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-bundlr}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-bundlr}
 
   validator:
     build: .
     ports:
-      - "127.0.0.1:42069:42069"
+      - "127.0.0.1:${PORT:-42069}:${PORT:-42069}"
     env_file:
       - .env
+    
     volumes:
-      - ./wallet.json:/wallet.json
+      - ${PWD}/${VALIDATOR_KEY}:/wallet.json
       - /bundles:/bundles
     depends_on:
       - postgres
@@ -30,7 +33,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./wallet.json:/wallet.json
+      - ${PWD}/${VALIDATOR_KEY}:/wallet.json
     depends_on:
       - postgres
     
