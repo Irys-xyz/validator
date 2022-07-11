@@ -77,7 +77,6 @@ fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
 }
 
 fn public_only_jwk_from_rsa_n(encoded_n: &str) -> Result<JsonWebKey, DecodeError> {
-    dbg!("Decoding {}", encoded_n);
     Ok(JsonWebKey::new(Key::RSA {
         public: RsaPublic {
             e: PublicExponent,
@@ -112,17 +111,18 @@ pub trait IntoAsync<T> {
 #[async_trait::async_trait]
 impl IntoAsync<AppContext> for CliOpts {
     async fn into_async(&self) -> AppContext {
-        dbg!("Requesting {}public", &self.bundler_url);
-        let fmt_bundler_url : String = self.bundler_url.to_string().replace(&['(', ')', ',', '\"', '.', ';', ':', '\''][..], "");
+        let fmt_bundler_url : String = self.bundler_url.to_string().replace(&['\"', '\''][..], "");
+        dbg!(&fmt_bundler_url);
         let n_response = reqwest::get(format!("{}public",fmt_bundler_url))
             .await
             .expect("Couldn't get public key from bundler")
             .text()
             .await
             .expect("Couldn't parse public key response from bundler");
-
+        
+        let public_response = serde_json::from_str::<PublicResponse>(&n_response).unwrap();
         let bundler_jwk =
-            public_only_jwk_from_rsa_n(&n_response).expect("Failed to decode bundler key");
+            public_only_jwk_from_rsa_n(&public_response.n).expect("Failed to decode bundler key");
 
         let validator_jwk: JsonWebKey = {
             let file = fs::read_to_string(&self.validator_key).unwrap();
