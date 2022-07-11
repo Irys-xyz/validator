@@ -1,6 +1,6 @@
 use sysinfo::{System, SystemExt};
 
-pub const MIN_RAM_KB : u64 = 524800;    //512mb
+pub const MIN_RAM_KB : u64 = 4294967296;    // 4GB
 pub const MIN_CPU_CORES: usize = 2;
 
 pub trait HardwareCheck {
