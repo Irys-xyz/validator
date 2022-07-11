@@ -113,7 +113,8 @@ pub trait IntoAsync<T> {
 impl IntoAsync<AppContext> for CliOpts {
     async fn into_async(&self) -> AppContext {
         dbg!("Requesting {}public", &self.bundler_url);
-        let n_response = reqwest::get(format!("{}public", &self.bundler_url))
+        let fmt_bundler_url : String = self.bundler_url.to_string().replace(&['(', ')', ',', '\"', '.', ';', ':', '\''][..], "");
+        let n_response = reqwest::get(format!("{}public",fmt_bundler_url))
             .await
             .expect("Couldn't get public key from bundler")
             .text()
@@ -161,7 +162,7 @@ fn main() -> () {
         System::print_hardware_info(&sys);
         let enough_resources = System::has_enough_resources(&sys);
         if !enough_resources {
-            println!("Not enough resources, check Readme file");
+            println!("Hardware check failed: Not enough resources, check Readme file");
             process::exit(1);
         }
         
