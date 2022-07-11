@@ -4,16 +4,8 @@ Bundlr validator implementation in Rust
 
 ## Prerequisites
 A system with the following installed:
-NodeJS LTS (v16) or higher
 Docker
 Docker-Compose
-Rust
-WASM pack
-pm2 as a global module (npm i -g pm2)
-If you are on a debian based system (reccomended Ubuntu 20.04 LTS), you can use the following script to automate the installation process: https://gist.github.com/JesseTheRobot/e2b8192012a8dffdf1ae80080442c36b
-
-
-
 ### Arweave Wallet
 if you have already created a wallet, skip this section.
 
@@ -41,18 +33,6 @@ Join as a validator [here](http://bundlr.network)
 make sure the required prerequisites are installed (see above)
 Ensure the `contracts-rust` submodule is up-to-date:
 `git submodule update --init --recursive`
-then, run the `buildall.sh` script - this should install and build all the required components.
-
-Next, prepare the database's docker container 
-- you can use a traditional database instance if you want, but it has to be PostgreSQL v14+. additional configuration in the .env section will be required.
-
-```sh
-# Start docker container for the database
-docker compose -f docker-compose.test.yml up -d
-
-# Run migrations
-diesel migration run --database-url postgres://bundlr:bundlr@localhost/bundlr
-```
 
 next, create the `.env` configuration file by running:
 ```sh
@@ -62,16 +42,29 @@ edit this `.env` file, change the parameters as appropriate,
 you will need to change BUNDLER_URL and GW_CONTRACT to the URL of the bundler node you are validating,
 and to the validator contract address for this bundler
 
+- run `docker-compose up postgres -d` to start the database for the validator, 
+
+- run 
+
+```sh
+diesel migration run --database-url postgres://bundlr:bundlr@localhost/bundlr
+```
+to configure the database
+
+- create the `.env` configuration file by running:
+```sh
+cp example.env .env
+```
+edit this `.env` file, change the parameters as appropriate, 
+you will need to change BUNDLER_URL and GW_CONTRACT to the URL of the bundler node you are validating,
+and to the validator contract address for this bundler
+
 
 ### Running the Validator
-
-to run the validator, use the command  `pm2 start`
-use the command `pm2 logs` to read the logs,
-use the command `pm2 status` to see the process status
-you should see two processes, Validator and Contract Gateway - both should be running.
-to start/stop/restart a process, run `pm2 <action> <Validator/Contract Gateway>`
-
-
+to run the entire validator - run `docker-compose up -d`
+once the command completes, you can check the status of the validator components by running
+`docker ps` - it should have 3 entries, named `validator`, `gateway`, and `postgres`
+to check the logs for each of the components, run the command `docker logs -f <name>`
 
 ## Running tests
 
