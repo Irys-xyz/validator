@@ -6,14 +6,15 @@ use diesel::{
 };
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
+use sysinfo::{System, SystemExt};
+use std::{fs, net::SocketAddr, str::FromStr, process};
 use serde::Deserialize;
-use std::{fs, net::SocketAddr, str::FromStr};
 use url::Url;
 
 use validator::{
     bundler::BundlerConfig,
     http::reqwest::ReqwestClient,
-    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig},
+    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig}, hardware::HardwareCheck,
 };
 use validator::{context::AppContext, state::generate_state};
 use validator::{cron::run_crons, server::run_server};
@@ -76,7 +77,6 @@ fn merge_configs(config: CliOpts, bundler_config: BundlerConfig) -> CliOpts {
 }
 
 fn public_only_jwk_from_rsa_n(encoded_n: &str) -> Result<JsonWebKey, DecodeError> {
-    dbg!("Decoding {}", encoded_n);
     Ok(JsonWebKey::new(Key::RSA {
         public: RsaPublic {
             e: PublicExponent,
@@ -107,21 +107,22 @@ struct PublicResponse {
 pub trait IntoAsync<T> {
     async fn into_async(&self) -> T;
 }
-// TODO: This does not belong here, create a new time for AppContextConfig and move to context module
 
 #[async_trait::async_trait]
 impl IntoAsync<AppContext> for CliOpts {
     async fn into_async(&self) -> AppContext {
-        dbg!("Requesting {}public", &self.bundler_url);
-        let n_response = reqwest::get(format!("{}public", &self.bundler_url))
+        let fmt_bundler_url : String = self.bundler_url.to_string().replace(&['\"', '\''][..], "");
+        dbg!(&fmt_bundler_url);
+        let n_response = reqwest::get(format!("{}public",fmt_bundler_url))
             .await
             .expect("Couldn't get public key from bundler")
             .text()
             .await
             .expect("Couldn't parse public key response from bundler");
-
+        
+        let public_response = serde_json::from_str::<PublicResponse>(&n_response).unwrap();
         let bundler_jwk =
-            public_only_jwk_from_rsa_n(&n_response).expect("Failed to decode bundler key");
+            public_only_jwk_from_rsa_n(&public_response.n).expect("Failed to decode bundler key");
 
         let validator_jwk: JsonWebKey = {
             let file = fs::read_to_string(&self.validator_key).unwrap();
@@ -157,6 +158,14 @@ impl IntoAsync<AppContext> for CliOpts {
 
 fn main() -> () {
     actix_rt::System::new().block_on(async {
+        let sys = System::new_all();
+        System::print_hardware_info(&sys);
+        let enough_resources = System::has_enough_resources(&sys);
+        if !enough_resources {
+            println!("Hardware check failed: Not enough resources, check Readme file");
+            process::exit(1);
+        }
+        
         dotenv::dotenv().ok();
 
         env_logger::init_from_env(Env::default().default_filter_or("info"));

@@ -210,6 +210,7 @@ pub mod test_utils {
         r2d2::{self, ConnectionManager},
         PgConnection,
     };
+    use diesel_migrations::embed_migrations;
     use url::Url;
 
     embed_migrations!();
@@ -239,7 +240,7 @@ pub mod test_utils {
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
-            listen: "127.0.0.1:10000".parse().unwrap(),
+            listen: "127.0.0.1:42069".parse().unwrap(),
             validator_state: state,
             http_client: MockHttpClient::new(|_, _| false),
             arweave_client,
@@ -276,7 +277,7 @@ pub mod test_utils {
         AppContext {
             key_manager: Arc::new(key_manager),
             db_conn_pool,
-            listen: "127.0.0.1:10000".parse().unwrap(),
+            listen: "127.0.0.1:42069".parse().unwrap(),
             validator_state: state,
             http_client,
             arweave_client,

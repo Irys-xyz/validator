@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate diesel;
+#[allow(unused_imports)]
 #[macro_use]
 extern crate diesel_migrations;
 
@@ -11,6 +12,7 @@ pub mod contract_gateway;
 pub mod cron;
 pub mod database;
 pub mod http;
+pub mod hardware;
 pub mod key_manager;
 pub mod server;
 pub mod state;

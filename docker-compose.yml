@@ -1,0 +1,55 @@
+version: "3.7"
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:14.2
+    ports:
+      - "127.0.0.1:5432:5432"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-bundlr}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-bundlr}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-bundlr}
+
+  validator:
+    container_name: validator
+    build: .
+    ports:
+      - "127.0.0.1:${PORT:-42069}:${PORT:-42069}"
+    env_file:
+      - .env
+    volumes:
+      - type: bind
+        source: ${VALIDATOR_KEY:-./wallet.json}
+        target: /wallet.json
+        read_only: true
+      
+      - /bundles:/bundles
+    environment:
+     - VALIDATOR_KEY=./wallet.json
+     - DATABASE_URL=${DATABASE_URL:-postgres://bundlr:bundlr@postgres:5432/bundlr}
+     - CONTRACT_GATEWAY=http://gateway:3000
+    depends_on:
+      - postgres
+      - gateway
+
+  gateway:
+    container_name: gateway
+    build: ./contracts-rust
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - type: bind
+        source: ${GW_WALLET:-./wallet.json}
+        target: /wallet.json
+        read_only: true
+      
+    environment:
+     - GW_WALLET=../wallet.json
+    depends_on:
+      - postgres
+    
