@@ -1,8 +1,12 @@
-# validator_rust
+# Bundlr validator
 
 Bundlr validator implementation in Rust
 
 ## Prerequisites
+
+You must have these installed:
+- Docker
+- Docker Compose
 
 ### Arweave Wallet
 
@@ -36,11 +40,12 @@ cp example.env .env
 After cloning the repo and setting up all the prerequisites, just run:
 
 ```sh
-cargo build
-cargo run
+docker-compose up
 ```
 
-The client will start validating
+Once the validator is built, your validator should be running and ready to go!
+
+To join 
 
 ## Running tests
 
