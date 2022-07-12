@@ -45,8 +45,6 @@ docker-compose up
 
 Once the validator is built, your validator should be running and ready to go!
 
-To join 
-
 ## Running tests
 
 To run tests, we need an empty postgres database with migrations executed. Database needs to be reset with every time tests are run.
