@@ -24,7 +24,7 @@ services:
       - .env
     volumes:
       - type: bind
-        source: ${VALIDATOR_KEY:-./wallet.json}
+        source: ${PWD}/wallet.json
         target: /wallet.json
         read_only: true
       
@@ -46,7 +46,7 @@ services:
       - .env
     volumes:
       - type: bind
-        source: ${GW_WALLET:-./wallet.json}
+        source: ${PWD}/wallet.json
         target: /wallet.json
         read_only: true
       
