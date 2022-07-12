@@ -160,11 +160,11 @@ fn main() -> () {
     actix_rt::System::new().block_on(async {
         let sys = System::new_all();
         System::print_hardware_info(&sys);
-        let enough_resources = System::has_enough_resources(&sys);
-        if !enough_resources {
-            println!("Hardware check failed: Not enough resources, check Readme file");
-            process::exit(1);
-        }
+        // let enough_resources = System::has_enough_resources(&sys);
+        // if !enough_resources {
+            // println!("Hardware check failed: Not enough resources, check Readme file");
+            // process::exit(1);
+        // }
         
         dotenv::dotenv().ok();
 
