@@ -12,6 +12,8 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-bundlr}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-bundlr}
       - POSTGRES_DATABASE=${POSTGRES_DATABASE:-bundlr}
+    volumes:
+     - postgres:/var/lib/postgresql/data
 
   validator:
     container_name: validator
@@ -52,4 +54,6 @@ services:
      - GW_WALLET=../wallet.json
     depends_on:
       - postgres
-    
+  
+volumes:
+  postgres:
