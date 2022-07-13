@@ -19,7 +19,7 @@ services:
     container_name: validator
     build: .
     ports:
-      - "0.0.0.0:${PORT:-42069}:${PORT:-42069}"
+      - "0.0.0.0:${PORT:-42069}:42069"
     env_file:
       - .env
     volumes:

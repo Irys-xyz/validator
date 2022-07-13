@@ -6,15 +6,16 @@ use diesel::{
 };
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
-use sysinfo::{System, SystemExt};
-use std::{fs, net::SocketAddr, str::FromStr, process};
 use serde::Deserialize;
+use std::{fs, net::SocketAddr, process, str::FromStr};
+use sysinfo::{System, SystemExt};
 use url::Url;
 
 use validator::{
     bundler::BundlerConfig,
+    hardware::HardwareCheck,
     http::reqwest::ReqwestClient,
-    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig}, hardware::HardwareCheck,
+    key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig},
 };
 use validator::{context::AppContext, state::generate_state};
 use validator::{cron::run_crons, server::run_server};
@@ -34,7 +35,7 @@ struct CliOpts {
     database_url: String,
 
     /// Listen address for the server
-    #[clap(short, long, env, default_value = "127.0.0.1:42069")]
+    #[clap(short, long, env, default_value = "0.0.0.0:42069")]
     listen: SocketAddr,
 
     /// URL for the bundler connection
@@ -111,15 +112,15 @@ pub trait IntoAsync<T> {
 #[async_trait::async_trait]
 impl IntoAsync<AppContext> for CliOpts {
     async fn into_async(&self) -> AppContext {
-        let fmt_bundler_url : String = self.bundler_url.to_string().replace(&['\"', '\''][..], "");
+        let fmt_bundler_url: String = self.bundler_url.to_string().replace(&['\"', '\''][..], "");
         dbg!(&fmt_bundler_url);
-        let n_response = reqwest::get(format!("{}public",fmt_bundler_url))
+        let n_response = reqwest::get(format!("{}public", fmt_bundler_url))
             .await
             .expect("Couldn't get public key from bundler")
             .text()
             .await
             .expect("Couldn't parse public key response from bundler");
-        
+
         let bundler_jwk =
             public_only_jwk_from_rsa_n(&n_response).expect("Failed to decode bundler key");
 
@@ -161,10 +162,10 @@ fn main() -> () {
         System::print_hardware_info(&sys);
         // let enough_resources = System::has_enough_resources(&sys);
         // if !enough_resources {
-            // println!("Hardware check failed: Not enough resources, check Readme file");
-            // process::exit(1);
+        // println!("Hardware check failed: Not enough resources, check Readme file");
+        // process::exit(1);
         // }
-        
+
         dotenv::dotenv().ok();
 
         env_logger::init_from_env(Env::default().default_filter_or("info"));
