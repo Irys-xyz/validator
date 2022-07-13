@@ -19,7 +19,7 @@ services:
     container_name: validator
     build: .
     ports:
-      - "127.0.0.1:${PORT:-42069}:${PORT:-42069}"
+      - "0.0.0.0:${PORT:-42069}:${PORT:-42069}"
     env_file:
       - .env
     volumes:
@@ -33,6 +33,8 @@ services:
      - VALIDATOR_KEY=./wallet.json
      - DATABASE_URL=${DATABASE_URL:-postgres://bundlr:bundlr@postgres:5432/bundlr}
      - CONTRACT_GATEWAY=http://gateway:3000
+     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-bundlr}
+     - POSTGRES_USER=${POSTGRES_USER:-bundlr}
     depends_on:
       - postgres
       - gateway

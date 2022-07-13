@@ -7,8 +7,13 @@ RUN cargo build --release
 
 FROM rust:1.62 as final
 
+RUN apt-get update
+RUN apt-get install libpq-dev postgresql-client -y
+RUN cargo install diesel_cli --no-default-features --features postgres
 COPY --from=build /target/release/validator .
+COPY ./migrations ./migrations
+COPY ./entrypoint.sh .
 
 EXPOSE 42069
 
-CMD ["./validator"]
+CMD ["bash","./entrypoint.sh", "postgres"]
