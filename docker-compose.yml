@@ -14,6 +14,7 @@ services:
       - POSTGRES_DATABASE=${POSTGRES_DATABASE:-bundlr}
     volumes:
      - postgres:/var/lib/postgresql/data
+    restart: unless-stopped
 
   validator:
     container_name: validator
@@ -38,6 +39,7 @@ services:
     depends_on:
       - postgres
       - gateway
+    restart: unless-stopped
 
   gateway:
     container_name: gateway
@@ -56,6 +58,7 @@ services:
      - GW_WALLET=../wallet.json
     depends_on:
       - postgres
+    restart: unless-stopped
   
 volumes:
   postgres:
