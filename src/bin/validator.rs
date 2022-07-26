@@ -100,11 +100,6 @@ impl InMemoryKeyManagerConfig for Keys {
     }
 }
 
-#[derive(Deserialize)]
-struct PublicResponse {
-    n: String,
-}
-
 #[async_trait::async_trait]
 pub trait IntoAsync<T> {
     async fn into_async(&self) -> T;
@@ -122,9 +117,9 @@ impl IntoAsync<AppContext> for CliOpts {
             .await
             .expect("Couldn't parse public key response from bundler");
 
-        let public_response = serde_json::from_str::<PublicResponse>(&n_response).unwrap();
+        let public_response = serde_json::from_str::<String>(&n_response).unwrap();
         let bundler_jwk =
-            public_only_jwk_from_rsa_n(&public_response.n).expect("Failed to decode bundler key");
+            public_only_jwk_from_rsa_n(&public_response).expect("Failed to decode bundler key");
         let validator_jwk: JsonWebKey = {
             let file = fs::read_to_string(&self.validator_key).unwrap();
             file.parse().unwrap()
