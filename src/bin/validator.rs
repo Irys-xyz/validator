@@ -7,7 +7,6 @@ use diesel::{
 use env_logger::Env;
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPublic};
 use log::info;
-use serde::Deserialize;
 use std::{fs, net::SocketAddr, str::FromStr};
 use sysinfo::{System, SystemExt};
 use url::Url;
