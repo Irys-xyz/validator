@@ -29,7 +29,7 @@ fn main() {
 
     match args.command {
         Command::Create => {
-            let rsa = Rsa::generate(2048)
+            let rsa = Rsa::generate(4096)
                 .expect("Failed to generate enough random data for the private key");
 
             let jwk = JsonWebKey::new(Key::RSA {
