@@ -83,14 +83,16 @@ where
         .first::<Transaction>(&conn)
 }
 
-pub async fn delete_txs<Context>(ctx: &Context, current_epoch: u128, epoch_amount: u128) -> Result<usize, Error>
+pub async fn filter<Context>(ctx: &Context, current_epoch: u128, epoch_amount: u128) -> Result<usize, Error>
 where
     Context: QueryContext,
 {
-    let epochs : Vec<Epoch> = (0..epoch_amount).map(|i| Epoch(current_epoch - i)).collect();
     let conn = ctx.get_db_connection();
+    let last_epoch = Epoch(current_epoch - epoch_amount);
+    // TODO: Transactions cleared should not be the ones who caused slashing
     let txs = transactions
-        .filter(transactions::epoch.ne_all(epochs));
+        .filter(transactions::epoch.lt(last_epoch))
+        .filter(transactions::validated.eq(true));
     diesel::delete(txs)
         .execute(&conn)
 }

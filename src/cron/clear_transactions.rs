@@ -1,4 +1,4 @@
-use crate::{database::{queries::{QueryContext, delete_txs}}};
+use crate::{database::{queries::{QueryContext, filter}}};
 
 use super::CronJobError;
 use crate::cron::ValidatorCronError;
@@ -8,7 +8,7 @@ where
   Context: QueryContext 
 {
   let epoch = ctx.current_epoch();
-  delete_txs(ctx, epoch, 40).await
+  filter(ctx, epoch, 40).await
     .map(|amount| print!( "Deleted {} transactions from epoch {} to {}", amount, epoch - 40, epoch))
     .map_err(|err| CronJobError::ValidatorError(ValidatorCronError::from(err)))
 }
