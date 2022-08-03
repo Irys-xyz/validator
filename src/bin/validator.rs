@@ -109,6 +109,8 @@ impl IntoAsync<AppContext> for CliOpts {
     async fn into_async(&self) -> AppContext {
         let fmt_bundler_url: String = self.bundler_url.to_string().replace(&['\"', '\''][..], "");
         dbg!(&fmt_bundler_url);
+
+        // FIXME: use genrics to define HTTP client instead of using reqwest directly
         let n_response = reqwest::get(format!("{}public", fmt_bundler_url))
             .await
             .expect("Couldn't get public key from bundler")
