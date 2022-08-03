@@ -10,6 +10,8 @@ use crate::database::schema::transactions::dsl::*;
 use crate::database::schema::{bundle, transactions};
 use crate::state::ValidatorStateAccess;
 
+use super::models::Epoch;
+
 pub trait QueryContext: ValidatorStateAccess {
     fn get_db_connection(&self) -> PooledConnection<ConnectionManager<PgConnection>>;
     fn current_epoch(&self) -> u128;
@@ -79,4 +81,18 @@ where
     transactions
         .filter(transactions::id.eq(tx_id))
         .first::<Transaction>(&conn)
+}
+
+pub async fn filter<Context>(ctx: &Context, current_epoch: u128, epoch_amount: u128) -> Result<usize, Error>
+where
+    Context: QueryContext,
+{
+    let conn = ctx.get_db_connection();
+    let last_epoch = Epoch(current_epoch - epoch_amount);
+    // TODO: Transactions cleared should not be the ones who caused slashing
+    let txs = transactions
+        .filter(transactions::epoch.lt(last_epoch))
+        .filter(transactions::validated.eq(true));
+    diesel::delete(txs)
+        .execute(&conn)
 }
