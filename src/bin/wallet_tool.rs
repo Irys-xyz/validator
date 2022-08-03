@@ -2,6 +2,7 @@ use std::{fs, io::stdin};
 
 use clap::{Parser, Subcommand};
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPrivate, RsaPublic};
+use log::debug;
 use openssl::rsa::Rsa;
 
 use validator::key_manager;
@@ -31,10 +32,9 @@ fn main() {
     let args = Args::parse();
 
     match args.command {
-        Command::Create => {
+        Command::Create => loop {
             let rsa = Rsa::generate(4096)
                 .expect("Failed to generate enough random data for the private key");
-
             let jwk = JsonWebKey::new(Key::RSA {
                 public: RsaPublic {
                     e: PublicExponent,
@@ -50,8 +50,12 @@ fn main() {
                 }),
             });
 
-            println!("{}", jwk);
-        }
+            let address = key_manager::split_jwk(&jwk).2;
+            if address.len() == 43 {
+                println!("{}", jwk);
+                break;
+            }
+        },
         Command::ShowAddress { ref wallet } => {
             let (_, _, address) = {
                 let wallet = if let Some(wallet) = wallet {
