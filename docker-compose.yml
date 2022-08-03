@@ -43,7 +43,7 @@ services:
 
   gateway:
     container_name: gateway
-    build: ./contracts-rust
+    build: ./contracts
     ports:
       - "127.0.0.1:3000:3000"
     env_file:
