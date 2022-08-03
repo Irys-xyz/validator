@@ -12,7 +12,7 @@ module.exports = {
         },
         {
             "name": "Contract Gateway",
-            "script": "./contracts-rust/gateway/dist/gateway/src/index.js"
+            "script": "./contracts/gateway/dist/gateway/src/index.js"
         }
     ]
 }
