@@ -54,6 +54,7 @@ where
                 .app_data(Data::new(runtime_context.clone()))
                 .wrap(Logger::default())
                 .route("/", web::get().to(index::<Context, KeyManager>))
+                .route("/status", web::get().to(index::<Context, KeyManager>))
                 .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
                 .service(
                     web::scope("/cosigner")
