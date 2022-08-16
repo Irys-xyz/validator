@@ -18,7 +18,7 @@ use routes::index::index;
 
 use crate::{
     database::queries::QueryContext, key_manager, server::routes::sign::sign_route,
-    state::ValidatorStateAccess,
+    state::ValidatorStateAccess, context::{BundlerAccess, ValidatorAddressAccess},
 };
 
 #[cfg(feature = "test-routes")]
@@ -34,6 +34,8 @@ where
     Context: RuntimeContext
         + routes::sign::Config<KeyManager>
         + ValidatorStateAccess
+        + BundlerAccess
+        + ValidatorAddressAccess
         + QueryContext
         + Clone
         + Send
@@ -51,13 +53,13 @@ where
             let app = App::new()
                 .app_data(Data::new(runtime_context.clone()))
                 .wrap(Logger::default())
-                .route("/", web::get().to(index))
+                .route("/", web::get().to(index::<Context, KeyManager>))
                 .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
                 .service(
                     web::scope("/cosigner")
                         .route("/sign", web::post().to(sign_route::<Context, KeyManager>)),
                 )
-                .service(web::scope("/idle").route("/", web::get().to(index)));
+                .service(web::scope("/idle").route("/", web::get().to(index::<Context, KeyManager>)));
 
             #[cfg(feature = "test-routes")]
             let app = app
