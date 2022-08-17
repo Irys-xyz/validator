@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::bundler::Bundler;
+use crate::{bundler::Bundler, http::Client};
 
 use super::error::TxsError;
 
@@ -53,11 +53,15 @@ pub struct ReqBody {
     pub variables: GqlVariables,
 }
 
-pub async fn get_transactions(
+pub async fn get_transactions<HttpClient>(
+    client: &HttpClient,
     bundler: &Bundler,
     limit: Option<i64>,
     after: Option<String>,
-) -> Result<(Vec<BundleTransaction>, bool, Option<String>), TxsError> {
+) -> Result<(Vec<BundleTransaction>, bool, Option<String>), TxsError>
+where
+    HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+{
     let raw_query = "query($limit: Int, $after: String) { transaction(limit: $limit, after: $after) { pageInfo { hasNextPage } edges { cursor node { data_item_id address current_block expected_block } } } }".to_string();
 
     let raw_variables = format!(
@@ -70,17 +74,23 @@ pub async fn get_transactions(
     );
 
     let url = format!("{}/graphql", bundler.url);
-    let client = reqwest::Client::new();
-    let data = format!(
+    let body = format!(
         "{{\"query\":\"{}\",\"variables\":{}}}",
         raw_query, raw_variables
     );
 
-    let body = serde_json::from_str::<ReqBody>(&data);
-    let res = client.post(&url).json(&body.unwrap()).send().await;
+    let req = http::request::Builder::new()
+        .method(http::Method::GET)
+        .uri(url.to_string()) // TODO: find better way to transform Url to Uri
+        .body(body)
+        .unwrap(); // FIXME: do not unwrap
 
-    if res.is_ok() {
-        let res = res.unwrap().json::<GraphqlQueryResponse>().await;
+    let req = reqwest::Request::try_from(req).unwrap(); // FIXME: do not unwrap
+
+    let res = client.execute(req).await.unwrap(); // FIXME: do not unwrap
+
+    if res.status().is_success() {
+        let res = res.json::<GraphqlQueryResponse>().await;
         if res.is_ok() {
             let res = res.unwrap();
             let mut txs = Vec::<BundleTransaction>::new();

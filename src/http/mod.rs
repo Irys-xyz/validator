@@ -3,6 +3,8 @@ use futures::future::BoxFuture;
 #[cfg(feature = "reqwest-client")]
 pub mod reqwest;
 
+pub use http::Method;
+
 pub use http::{method, request, response};
 
 pub trait ClientAccess<HttpClient>
@@ -29,6 +31,7 @@ pub mod mock {
     };
 
     use futures::future::BoxFuture;
+    use log::error;
 
     use super::Client;
 
@@ -168,7 +171,7 @@ pub mod mock {
                     Box::pin(std::future::ready(Ok(res)))
                 }
                 None => {
-                    eprintln!("no handler found for {:?}", req);
+                    error!("no handler found for {:?}", req);
                     Box::pin(std::future::ready(Err(MockHttpClientError::ResponseNotSet)))
                 }
             }

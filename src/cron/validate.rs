@@ -11,6 +11,7 @@ where
         + arweave::ArweaveContext<HttpClient>
         + context::ArweaveAccess
         + context::BundlerAccess
+        + http::ClientAccess<HttpClient>
         + key_manager::KeyManagerAccess<KeyManager>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
@@ -25,11 +26,13 @@ where
     Ok(())
 }
 
-pub async fn validate_transactions<Context>(ctx: &Context) -> Result<(), CronJobError>
+pub async fn validate_transactions<Context, HttpClient>(ctx: &Context) -> Result<(), CronJobError>
 where
-    Context: context::BundlerAccess,
+    Context: context::BundlerAccess + http::ClientAccess<HttpClient>,
+    HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    super::bundle::validate_transactions(ctx.bundler())
+    let http_client = ctx.get_http_client();
+    super::bundle::validate_transactions(http_client, ctx.bundler())
         .await
         .map_err(CronJobError::ValidatorError)?;
 

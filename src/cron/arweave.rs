@@ -244,21 +244,27 @@ impl Arweave {
             }
         );
 
-        let url = format!("{}graphql?query={}", self.get_host(), raw_query);
+        // FIXME: urlencode raw_query
+        let url = format!(
+            "{}graphql?query={}",
+            self.get_host(),
+            urlencoding::encode(raw_query)
+        );
 
         // TODO: why to build object by parsing from string and then turn it later back to string
-        let data = format!(
+        let body = format!(
             "{{\"query\":\"{}\",\"variables\":{}}}",
             raw_query, raw_variables
         );
 
-        let reqwest_client = reqwest::Client::new();
-        let body = serde_json::from_str::<ReqBody>(&data);
-        let req = reqwest_client
-            .post(&url)
-            .json(&body.unwrap()) // FIXME: do not unwrap
-            .build()
-            .unwrap();
+        let req: http::Request<String> = http::request::Builder::new()
+            .method(http::Method::POST)
+            .uri(url)
+            .body(body)
+            .expect("Failed to create request for fetching latest transactions");
+
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+
         let res = ctx.get_client().execute(req).await.unwrap(); // FIXME: do not unwrap
 
         match res.status() {
@@ -383,7 +389,7 @@ mod tests {
     async fn get_latest_transactions_should_return_ok() {
         let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
             .when(|req: &Request| {
-                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                let url = "http://example.com/graphql?query=query%28%24owners%3A%20%5BString%21%5D%2C%20%24first%3A%20Int%29%20%7B%20transactions%28owners%3A%20%24owners%2C%20first%3A%20%24first%29%20%7B%20pageInfo%20%7B%20hasNextPage%20%7D%20edges%20%7B%20cursor%20node%20%7B%20id%20owner%20%7B%20address%20%7D%20signature%20recipient%20tags%20%7B%20name%20value%20%7D%20block%20%7B%20height%20id%20timestamp%20%7D%20%7D%20%7D%20%7D%20%7D";
                 req.method() == Method::POST && &req.url().to_string() == url
             })
             .then(|_: &Request| {

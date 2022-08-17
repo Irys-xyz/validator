@@ -9,10 +9,10 @@ use crate::context::{ArweaveAccess, BundlerAccess};
 use crate::cron::arweave::{Arweave, Transaction as ArweaveTx};
 use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
 use crate::database::queries::{self, *};
+use crate::http::{self, Client};
+use crate::key_manager;
 use crate::key_manager::KeyManagerAccess;
 use crate::types::Validator;
-use crate::{http, key_manager};
-use awc::Client;
 use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
 use bundlr_sdk::verify::types::Item;
 use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
@@ -35,7 +35,8 @@ where
         + arweave::ArweaveContext<HttpClient>
         + ArweaveAccess
         + BundlerAccess
-        + KeyManagerAccess<KeyManager>,
+        + KeyManagerAccess<KeyManager>
+        + http::ClientAccess<HttpClient>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
 {
@@ -82,7 +83,8 @@ where
     Context: queries::QueryContext
         + ArweaveContext<HttpClient>
         + BundlerAccess
-        + KeyManagerAccess<KeyManager>,
+        + KeyManagerAccess<KeyManager>
+        + http::ClientAccess<HttpClient>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
 {
@@ -180,13 +182,14 @@ where
     Ok(())
 }
 
-async fn verify_bundle_tx<Context, KeyManager>(
+async fn verify_bundle_tx<Context, HttpClient, KeyManager>(
     ctx: &Context,
     bundle_tx: &Item,
     current_block: Option<u128>,
 ) -> Result<(), ValidatorCronError>
 where
-    Context: queries::QueryContext + KeyManagerAccess<KeyManager>,
+    Context: queries::QueryContext + KeyManagerAccess<KeyManager> + http::ClientAccess<HttpClient>,
+    HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
 {
     // TODO: this code needs review, especially error handling for get_tx looks suspicious
@@ -203,7 +206,7 @@ where
             },
         });
     } else {
-        let peer_tx = tx_exists_on_peers(&bundle_tx.tx_id).await;
+        let peer_tx = tx_exists_on_peers(ctx, &bundle_tx.tx_id).await;
         if peer_tx.is_ok() {
             tx_receipt = Some(peer_tx.unwrap());
         }
@@ -239,21 +242,33 @@ where
     Ok(())
 }
 
-async fn tx_exists_on_peers(tx_id: &str) -> Result<TxReceipt, ValidatorCronError> {
-    let client = Client::default();
+async fn tx_exists_on_peers<Context, HttpClient>(
+    ctx: &Context,
+    tx_id: &str,
+) -> Result<TxReceipt, ValidatorCronError>
+where
+    Context: http::ClientAccess<HttpClient>,
+    HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+{
+    let client = ctx.get_http_client();
     let validator_peers = Vec::<Validator>::new();
     for peer in validator_peers {
-        let response = client
-            .get(format!("{}/tx/{}", peer.url, tx_id))
-            .send()
-            .await;
+        let req = http::request::Builder::new()
+            .method(http::Method::GET)
+            .uri(format!("{}/tx/{}", peer.url, tx_id))
+            .body("".to_owned())
+            .unwrap();
+
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+        let response = client.execute(req).await;
 
         if let Err(r) = response {
-            error!("Error occurred while getting tx from peer - {}", r);
+            error!("Error occurred while getting tx from peer - {:?}", r);
             continue;
         }
 
-        let mut response = response.unwrap();
+        // FIXME: do not unwrap.
+        let response = response.unwrap();
 
         if response.status().is_success() {
             return Ok(response.json().await.unwrap());
@@ -291,8 +306,14 @@ where
     Ok(key_manager.verify_bundler_signature(&message, &sig))
 }
 
-pub async fn validate_transactions(bundler: &Bundler) -> Result<(), ValidatorCronError> {
-    let res = get_transactions(bundler, Some(100), None).await;
+pub async fn validate_transactions<HttpClient>(
+    http_client: &HttpClient,
+    bundler: &Bundler,
+) -> Result<(), ValidatorCronError>
+where
+    HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+{
+    let res = get_transactions(http_client, bundler, Some(100), None).await;
     let txs = match res {
         Ok(r) => r.0,
         Err(_) => Vec::new(),
@@ -326,7 +347,7 @@ mod tests {
     async fn validate_bundler_should_abort_due_no_block() {
         let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
             .when(|req: &Request| {
-                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                let url = "http://example.com/graphql?query=query%28%24owners%3A%20%5BString%21%5D%2C%20%24first%3A%20Int%29%20%7B%20transactions%28owners%3A%20%24owners%2C%20first%3A%20%24first%29%20%7B%20pageInfo%20%7B%20hasNextPage%20%7D%20edges%20%7B%20cursor%20node%20%7B%20id%20owner%20%7B%20address%20%7D%20signature%20recipient%20tags%20%7B%20name%20value%20%7D%20block%20%7B%20height%20id%20timestamp%20%7D%20%7D%20%7D%20%7D%20%7D";
                 req.method() == Method::POST && &req.url().to_string() == url
             })
             .then(|_: &Request| {
@@ -360,7 +381,7 @@ mod tests {
     async fn validate_bundler_should_return_ok() {
         let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
             .when(|req: &Request| {
-                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                let url = "http://example.com/graphql?query=query%28%24owners%3A%20%5BString%21%5D%2C%20%24first%3A%20Int%29%20%7B%20transactions%28owners%3A%20%24owners%2C%20first%3A%20%24first%29%20%7B%20pageInfo%20%7B%20hasNextPage%20%7D%20edges%20%7B%20cursor%20node%20%7B%20id%20owner%20%7B%20address%20%7D%20signature%20recipient%20tags%20%7B%20name%20value%20%7D%20block%20%7B%20height%20id%20timestamp%20%7D%20%7D%20%7D%20%7D%20%7D";
                 req.method() == Method::POST && &req.url().to_string() == url
             })
             .then(|_: &Request| {
