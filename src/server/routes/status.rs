@@ -19,7 +19,7 @@ struct StatusBody {
     previous_epoch: u128
 }
 
-pub async fn index<Context, KeyManager>(
+pub async fn status<Context, KeyManager>(
     ctx: Data<Context>,
 ) -> actix_web::Result<HttpResponse, ValidatorServerError>
 where

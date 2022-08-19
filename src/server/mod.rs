@@ -15,6 +15,7 @@ use diesel::{
 use log::info;
 use routes::get_tx::get_tx;
 use routes::index::index;
+use routes::status::status;
 
 use crate::{
     database::queries::QueryContext, key_manager, server::routes::sign::sign_route,
@@ -54,7 +55,7 @@ where
                 .app_data(Data::new(runtime_context.clone()))
                 .wrap(Logger::default())
                 .route("/", web::get().to(index::<Context, KeyManager>))
-                .route("/status", web::get().to(index::<Context, KeyManager>))
+                .route("/status", web::get().to(status::<Context, KeyManager>))
                 .route("/tx/{tx_id}", web::get().to(get_tx::<Context>))
                 .service(
                     web::scope("/cosigner")
