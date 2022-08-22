@@ -1,3 +1,6 @@
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
 use log::error;
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -11,6 +14,8 @@ use url::Url;
 
 use crate::context::ArweaveAccess;
 use crate::http::Client;
+use crate::retry::retry;
+use crate::retry::RetryControl;
 use crate::state::ValidatorStateAccess;
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -143,6 +148,26 @@ pub struct ReqBody {
     pub variables: GqlVariables,
 }
 
+#[derive(Debug, PartialEq)]
+enum RetryAfter {
+    Timestamp(DateTime<Utc>),
+    Duration(i64),
+}
+
+impl FromStr for RetryAfter {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(duration) = s.parse::<i64>() {
+            Ok(RetryAfter::Duration(duration))
+        } else if let Ok(date) = httpdate::parse_http_date(s) {
+            Ok(RetryAfter::Timestamp(DateTime::from(date)))
+        } else {
+            Err(String::from("Not a valid value for Retry-After header"))
+        }
+    }
+}
+
 pub trait ArweaveContext<HttpClient>
 where
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
@@ -159,25 +184,53 @@ impl Arweave {
     pub async fn get_network_info<Context, HttpClient>(
         &self,
         ctx: &Context,
-    ) -> reqwest::Result<NetworkInfo>
+    ) -> Result<NetworkInfo, HttpClient::Error>
     where
         Context: ArweaveContext<HttpClient>,
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
     {
         info!("Fetch network info");
         let uri = http::uri::Uri::from_str(&format!("{}info", self.get_host())).unwrap();
-        let req: http::Request<String> = http::request::Builder::new()
-            .method(http::Method::GET)
-            .uri(uri)
-            .body("".to_string())
-            .unwrap();
 
-        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-        let res: reqwest::Response = ctx.get_client().execute(req).await.expect("request failed"); // FIXME: should not panic, handle failure
-        if res.status().is_success() {
-            return res.json().await;
-        } else {
-            Err(res.error_for_status().err().unwrap()) // FIXME: do not unwrap
+        let client = ctx.get_client();
+        let res = retry::<tokio::runtime::Handle, _>()
+            .max_retries(3)
+            .run_with_context(&(client, uri), |(client, uri)| async move {
+                let req: http::Request<String> = http::request::Builder::new()
+                    .method(http::Method::GET)
+                    .uri(uri)
+                    .body("".to_string())
+                    .unwrap();
+                let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+                let res = client.execute(req).await;
+                match res {
+                    Ok(res) => {
+                        if let Some(retry_after) = res.headers().get(http::header::RETRY_AFTER) {
+                            let retry_delay = match retry_after.to_str().unwrap().parse().unwrap() {
+                                RetryAfter::Duration(duration_seconds) => {
+                                    Duration::seconds(duration_seconds).to_std().unwrap()
+                                }
+                                RetryAfter::Timestamp(timestamp) => timestamp
+                                    .signed_duration_since(Utc::now())
+                                    .to_std()
+                                    .unwrap(),
+                            };
+                            RetryControl::Retry(Ok(res), Some(retry_delay))
+                        } else if res.status().is_server_error() {
+                            RetryControl::Retry(Ok(res), None)
+                        } else {
+                            RetryControl::Success(Ok(res))
+                        }
+                    }
+                    ret @ Err(_) => RetryControl::Fail(ret),
+                }
+            })
+            .await?;
+
+        match res.error_for_status() {
+            Ok(res) => res.json().await.map_err(|err| err.into()),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -297,6 +350,7 @@ pub async fn sync_network_info<Context, HttpClient>(ctx: &Context) -> Result<(),
 where
     Context: ArweaveContext<HttpClient> + ArweaveAccess + ValidatorStateAccess,
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+    HttpClient::Error: From<reqwest::Error>,
 {
     let network_info = ctx.arweave().get_network_info(ctx).await.map_err(|err| {
         error!("Request for network info failed: {:?}", err);
@@ -323,6 +377,63 @@ mod tests {
     use reqwest::{Request, Response};
     use url::Url;
 
+    mod retry_after_parser {
+        use chrono::{DateTime, NaiveDate, Utc};
+        use http::HeaderValue;
+
+        use crate::cron::arweave::RetryAfter;
+
+        #[test]
+        fn parse_duration_in_seconds() {
+            let val = HeaderValue::from_static("1");
+            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+            assert_eq!(retry_after, RetryAfter::Duration(1))
+        }
+
+        #[test]
+        fn parse_imf_fixdate_date() {
+            let val = HeaderValue::from_static("Sun, 06 Nov 1994 08:49:37 GMT");
+            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+            assert_eq!(
+                retry_after,
+                RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
+                    NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
+                    Utc
+                ))
+            )
+        }
+
+        #[test]
+        fn parse_rfc850_date() {
+            let val = HeaderValue::from_static("Sunday, 06-Nov-94 08:49:37 GMT");
+            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+            assert_eq!(
+                retry_after,
+                RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
+                    NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
+                    Utc
+                ))
+            )
+        }
+
+        #[test]
+        fn parse_asctime_date() {
+            let val = HeaderValue::from_static("Sun Nov  6 08:49:37 1994");
+            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+            assert_eq!(
+                retry_after,
+                RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
+                    NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
+                    Utc
+                ))
+            )
+        }
+    }
+
     #[actix_rt::test]
     async fn get_network_info() {
         let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
@@ -340,13 +451,56 @@ mod tests {
             });
 
         let (key_manager, _bundle_pvk) = test_keys();
-        let ctx = test_context_with_http_client(key_manager, client);
+        let ctx = test_context_with_http_client(key_manager, client.clone());
         let arweave = Arweave {
             url: Url::from_str("http://example.com").unwrap(),
         };
         let network_info = arweave.get_network_info(&ctx).await.unwrap();
 
+        // release other references to the client.
+        drop(ctx);
+
         assert_eq!(network_info.height, 551511);
+
+        // Double check that we only made single HTTP request
+        client.verify(|calls| {
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].count(), 1);
+        });
+    }
+
+    #[actix_rt::test]
+    async fn get_network_info_is_tried_thrice() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/info";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"network\":\"arweave.N.1\",\"version\":5,\"release\":43,\"height\":551511,\"current\":\"XIDpYbc3b5iuiqclSl_Hrx263Sd4zzmrNja1cvFlqNWUGuyymhhGZYI4WMsID1K3\",\"blocks\":97375,\"peers\":64,\"queue_length\":0,\"node_state_latency\":18}";
+                let response = http::response::Builder::new()
+                    .status(500)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client.clone());
+        let arweave = Arweave {
+            url: Url::from_str("http://example.com").unwrap(),
+        };
+
+        assert!(arweave.get_network_info(&ctx).await.is_err());
+
+        // release other references to the client.
+        drop(ctx);
+
+        // Make sure we end up trying three times before failing
+        client.verify(|calls| {
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].count(), 3);
+        });
     }
 
     #[actix_rt::test]
@@ -369,16 +523,16 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
         let arweave = Arweave {
-            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str("http://example.com").unwrap(),
         };
         arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
 
         let raw_path = "./bundles/tx_id";
         let file_path = Path::new(raw_path).is_file();
-        assert!(file_path); // FIXME: remove/replace use of assert
+        assert!(file_path);
         match fs::remove_file(raw_path) {
             Ok(_) => (),
-            Err(_) => println!(
+            Err(_) => eprintln!(
                 "File {} not removed properly, please delete it manually",
                 raw_path
             ),
@@ -404,7 +558,7 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
         let arweave = Arweave {
-            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str("http://example.com").unwrap(),
         };
         arweave
             .get_latest_transactions(&ctx, "owner", None, None)
