@@ -21,7 +21,16 @@ impl super::Client for ReqwestClient {
 
 #[cfg(test)]
 pub mod mock {
-    pub type MockHttpClient = super::super::mock::MockClient<reqwest::Request, reqwest::Response>;
+    use crate::http::mock::MockHttpClientError;
+
+    pub type MockHttpClient =
+        crate::http::mock::MockClient<reqwest::Request, reqwest::Response, reqwest::Error>;
+
+    impl From<reqwest::Error> for MockHttpClientError<reqwest::Error> {
+        fn from(err: reqwest::Error) -> Self {
+            MockHttpClientError::ImplError(err)
+        }
+    }
 
     mod test {
         use std::str::FromStr;

@@ -26,6 +26,7 @@ pub trait Client {
 pub mod mock {
     use std::{
         fmt,
+        marker::PhantomData,
         pin::Pin,
         sync::{Arc, Mutex},
     };
@@ -52,17 +53,26 @@ pub mod mock {
         count: usize,
     }
 
-    pub struct When<Request, Response> {
-        client: MockClient<Request, Response>,
+    impl<Request> Call<Request> {
+        pub fn count(&self) -> usize {
+            self.count
+        }
+    }
+
+    pub struct When<Request, Response, Error> {
+        client: MockClient<Request, Response, Error>,
         matcher: fn(&Request) -> bool,
     }
 
-    impl<Request, Response> When<Request, Response> {
-        fn new(client: MockClient<Request, Response>, matcher: fn(&Request) -> bool) -> Self {
+    impl<Request, Response, Error> When<Request, Response, Error> {
+        fn new(
+            client: MockClient<Request, Response, Error>,
+            matcher: fn(&Request) -> bool,
+        ) -> Self {
             Self { client, matcher }
         }
 
-        pub fn then<F>(self, response_builder: F) -> MockClient<Request, Response>
+        pub fn then<F>(self, response_builder: F) -> MockClient<Request, Response, Error>
         where
             F: Fn(&Request) -> Response + 'static,
         {
@@ -72,8 +82,9 @@ pub mod mock {
     }
 
     #[derive(Debug)]
-    pub enum MockHttpClientError {
+    pub enum MockHttpClientError<ImplError> {
         ResponseNotSet,
+        ImplError(ImplError),
     }
 
     struct State<Request, Response> {
@@ -90,25 +101,28 @@ pub mod mock {
         }
     }
 
-    pub struct MockClient<Request, Response> {
+    pub struct MockClient<Request, Response, Error> {
         state: Arc<Mutex<State<Request, Response>>>,
         req_eq: fn(&Request, &Request) -> bool,
+        phantom: PhantomData<Error>,
     }
 
-    impl<Request, Response> Clone for MockClient<Request, Response> {
+    impl<Request, Response, Error> Clone for MockClient<Request, Response, Error> {
         fn clone(&self) -> Self {
             Self {
                 state: self.state.clone(),
                 req_eq: self.req_eq.clone(),
+                phantom: PhantomData,
             }
         }
     }
 
-    impl<Request, Response> MockClient<Request, Response> {
+    impl<Request, Response, Error> MockClient<Request, Response, Error> {
         pub fn new(req_eq: fn(&Request, &Request) -> bool) -> Self {
             Self {
                 state: Arc::new(Mutex::new(State::new())),
                 req_eq,
+                phantom: PhantomData,
             }
         }
 
@@ -127,7 +141,7 @@ pub mod mock {
             self
         }
 
-        pub fn when(self, matcher: fn(&Request) -> bool) -> When<Request, Response> {
+        pub fn when(self, matcher: fn(&Request) -> bool) -> When<Request, Response, Error> {
             When::new(self, matcher)
         }
 
@@ -141,14 +155,15 @@ pub mod mock {
         }
     }
 
-    impl<Request, Response> Client for MockClient<Request, Response>
+    impl<Request, Response, Error> Client for MockClient<Request, Response, Error>
     where
         Request: fmt::Debug,
         Response: Send + 'static,
+        Error: fmt::Debug + Send,
     {
         type Request = Request;
         type Response = Response;
-        type Error = MockHttpClientError;
+        type Error = MockHttpClientError<Error>;
 
         fn execute(&self, req: Self::Request) -> BoxFuture<Result<Self::Response, Self::Error>> {
             let mut state = self.state.lock().unwrap();
