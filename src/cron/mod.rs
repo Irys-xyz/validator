@@ -1,11 +1,11 @@
 pub mod arweave;
 mod bundle;
+mod clear_transactions;
 mod contract;
 mod error;
 mod slasher;
 mod transactions;
 mod validate;
-mod clear_transactions;
 
 use crate::{
     context,
@@ -38,7 +38,11 @@ where
         + http::ClientAccess<HttpClient>
         + key_manager::KeyManagerAccess<KeyManager>
         + queries::QueryContext,
-    HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+    HttpClient: http::Client<
+        Request = reqwest::Request,
+        Response = reqwest::Response,
+        Error = reqwest::Error,
+    >,
     KeyManager: key_manager::KeyManager,
 {
     info!("Validator starting ...");

@@ -17,15 +17,30 @@ pub struct Bundler {
 }
 
 impl BundlerConfig {
+    // FIXME: borrow the HttpClient instead of moving ownership
     pub async fn fetch_config<HttpClient>(client: HttpClient, url: &Url) -> BundlerConfig
     where
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
     {
-        let reqwest_client = reqwest::Client::new();
-        let req = reqwest_client.get(url.to_string()).build().unwrap();
+        let req = http::request::Builder::new()
+            .method(http::Method::GET)
+            .uri(url.to_string()) // TODO: find better way to transform Url to Uri
+            .body("".to_owned()) // TODO: find better solution than creating empty string
+            .expect("Failed to build request for fetching bundler config");
 
-        let res = client.execute(req).await.expect("request failed");
-        let data = res.text().await.unwrap();
+        let req = reqwest::Request::try_from(req)
+            .expect("Failed to build request for fetching bundler config");
+
+        let res = client
+            .execute(req)
+            .await
+            .expect("Failed to fetch bundler config");
+
+        let data = res
+            .text()
+            .await
+            .expect("Failed to deserialize bundler config");
+
         let body = serde_json::from_str::<BundlerConfig>(data.as_str());
 
         body.unwrap()

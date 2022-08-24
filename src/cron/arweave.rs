@@ -159,25 +159,30 @@ impl Arweave {
     pub async fn get_network_info<Context, HttpClient>(
         &self,
         ctx: &Context,
-    ) -> reqwest::Result<NetworkInfo>
+    ) -> Result<NetworkInfo, HttpClient::Error>
     where
         Context: ArweaveContext<HttpClient>,
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
     {
         info!("Fetch network info");
         let uri = http::uri::Uri::from_str(&format!("{}info", self.get_host())).unwrap();
+
         let req: http::Request<String> = http::request::Builder::new()
             .method(http::Method::GET)
             .uri(uri)
             .body("".to_string())
             .unwrap();
-
         let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-        let res: reqwest::Response = ctx.get_client().execute(req).await.expect("request failed"); // FIXME: should not panic, handle failure
-        if res.status().is_success() {
-            return res.json().await;
-        } else {
-            Err(res.error_for_status().err().unwrap()) // FIXME: do not unwrap
+
+        let client = ctx.get_client();
+        let res =
+            crate::http::reqwest::execute_with_retry::<tokio::runtime::Handle, _>(client, 3, req)
+                .await?;
+
+        match res.error_for_status() {
+            Ok(res) => res.json().await.map_err(|err| err.into()),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -244,21 +249,27 @@ impl Arweave {
             }
         );
 
-        let url = format!("{}graphql?query={}", self.get_host(), raw_query);
+        // FIXME: urlencode raw_query
+        let url = format!(
+            "{}graphql?query={}",
+            self.get_host(),
+            urlencoding::encode(raw_query)
+        );
 
         // TODO: why to build object by parsing from string and then turn it later back to string
-        let data = format!(
+        let body = format!(
             "{{\"query\":\"{}\",\"variables\":{}}}",
             raw_query, raw_variables
         );
 
-        let reqwest_client = reqwest::Client::new();
-        let body = serde_json::from_str::<ReqBody>(&data);
-        let req = reqwest_client
-            .post(&url)
-            .json(&body.unwrap()) // FIXME: do not unwrap
-            .build()
-            .unwrap();
+        let req: http::Request<String> = http::request::Builder::new()
+            .method(http::Method::POST)
+            .uri(url)
+            .body(body)
+            .expect("Failed to create request for fetching latest transactions");
+
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+
         let res = ctx.get_client().execute(req).await.unwrap(); // FIXME: do not unwrap
 
         match res.status() {
@@ -291,6 +302,7 @@ pub async fn sync_network_info<Context, HttpClient>(ctx: &Context) -> Result<(),
 where
     Context: ArweaveContext<HttpClient> + ArweaveAccess + ValidatorStateAccess,
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
+    HttpClient::Error: From<reqwest::Error>,
 {
     let network_info = ctx.arweave().get_network_info(ctx).await.map_err(|err| {
         error!("Request for network info failed: {:?}", err);
@@ -334,13 +346,56 @@ mod tests {
             });
 
         let (key_manager, _bundle_pvk) = test_keys();
-        let ctx = test_context_with_http_client(key_manager, client);
+        let ctx = test_context_with_http_client(key_manager, client.clone());
         let arweave = Arweave {
             url: Url::from_str("http://example.com").unwrap(),
         };
         let network_info = arweave.get_network_info(&ctx).await.unwrap();
 
+        // release other references to the client.
+        drop(ctx);
+
         assert_eq!(network_info.height, 551511);
+
+        // Double check that we only made single HTTP request
+        client.verify(|calls| {
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].count(), 1);
+        });
+    }
+
+    #[actix_rt::test]
+    async fn get_network_info_is_tried_thrice() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/info";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"network\":\"arweave.N.1\",\"version\":5,\"release\":43,\"height\":551511,\"current\":\"XIDpYbc3b5iuiqclSl_Hrx263Sd4zzmrNja1cvFlqNWUGuyymhhGZYI4WMsID1K3\",\"blocks\":97375,\"peers\":64,\"queue_length\":0,\"node_state_latency\":18}";
+                let response = http::response::Builder::new()
+                    .status(500)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client.clone());
+        let arweave = Arweave {
+            url: Url::from_str("http://example.com").unwrap(),
+        };
+
+        assert!(arweave.get_network_info(&ctx).await.is_err());
+
+        // release other references to the client.
+        drop(ctx);
+
+        // Make sure we end up trying three times before failing
+        client.verify(|calls| {
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].count(), 3);
+        });
     }
 
     #[actix_rt::test]
@@ -363,16 +418,16 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
         let arweave = Arweave {
-            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str("http://example.com").unwrap(),
         };
         arweave.get_tx_data(&ctx, "tx_id").await.unwrap();
 
         let raw_path = "./bundles/tx_id";
         let file_path = Path::new(raw_path).is_file();
-        assert!(file_path); // FIXME: remove/replace use of assert
+        assert!(file_path);
         match fs::remove_file(raw_path) {
             Ok(_) => (),
-            Err(_) => println!(
+            Err(_) => eprintln!(
                 "File {} not removed properly, please delete it manually",
                 raw_path
             ),
@@ -383,7 +438,7 @@ mod tests {
     async fn get_latest_transactions_should_return_ok() {
         let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
             .when(|req: &Request| {
-                let url = "http://example.com/graphql?query=query($owners:%20[String!],%20$first:%20Int)%20{%20transactions(owners:%20$owners,%20first:%20$first)%20{%20pageInfo%20{%20hasNextPage%20}%20edges%20{%20cursor%20node%20{%20id%20owner%20{%20address%20}%20signature%20recipient%20tags%20{%20name%20value%20}%20block%20{%20height%20id%20timestamp%20}%20}%20}%20}%20}";
+                let url = "http://example.com/graphql?query=query%28%24owners%3A%20%5BString%21%5D%2C%20%24first%3A%20Int%29%20%7B%20transactions%28owners%3A%20%24owners%2C%20first%3A%20%24first%29%20%7B%20pageInfo%20%7B%20hasNextPage%20%7D%20edges%20%7B%20cursor%20node%20%7B%20id%20owner%20%7B%20address%20%7D%20signature%20recipient%20tags%20%7B%20name%20value%20%7D%20block%20%7B%20height%20id%20timestamp%20%7D%20%7D%20%7D%20%7D%20%7D";
                 req.method() == Method::POST && &req.url().to_string() == url
             })
             .then(|_: &Request| {
@@ -398,7 +453,7 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
         let arweave = Arweave {
-            url: Url::from_str(&"http://example.com".to_string()).unwrap(),
+            url: Url::from_str("http://example.com").unwrap(),
         };
         arweave
             .get_latest_transactions(&ctx, "owner", None, None)
