@@ -1,6 +1,3 @@
-use chrono::DateTime;
-use chrono::Duration;
-use chrono::Utc;
 use log::error;
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -14,8 +11,6 @@ use url::Url;
 
 use crate::context::ArweaveAccess;
 use crate::http::Client;
-use crate::retry::retry;
-use crate::retry::RetryControl;
 use crate::state::ValidatorStateAccess;
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -148,26 +143,6 @@ pub struct ReqBody {
     pub variables: GqlVariables,
 }
 
-#[derive(Debug, PartialEq)]
-enum RetryAfter {
-    Timestamp(DateTime<Utc>),
-    Duration(i64),
-}
-
-impl FromStr for RetryAfter {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Ok(duration) = s.parse::<i64>() {
-            Ok(RetryAfter::Duration(duration))
-        } else if let Ok(date) = httpdate::parse_http_date(s) {
-            Ok(RetryAfter::Timestamp(DateTime::from(date)))
-        } else {
-            Err(String::from("Not a valid value for Retry-After header"))
-        }
-    }
-}
-
 pub trait ArweaveContext<HttpClient>
 where
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
@@ -193,40 +168,17 @@ impl Arweave {
         info!("Fetch network info");
         let uri = http::uri::Uri::from_str(&format!("{}info", self.get_host())).unwrap();
 
+        let req: http::Request<String> = http::request::Builder::new()
+            .method(http::Method::GET)
+            .uri(uri)
+            .body("".to_string())
+            .unwrap();
+        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
+
         let client = ctx.get_client();
-        let res = retry::<tokio::runtime::Handle, _>()
-            .max_retries(3)
-            .run_with_context(&(client, uri), |(client, uri)| async move {
-                let req: http::Request<String> = http::request::Builder::new()
-                    .method(http::Method::GET)
-                    .uri(uri)
-                    .body("".to_string())
-                    .unwrap();
-                let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-                let res = client.execute(req).await;
-                match res {
-                    Ok(res) => {
-                        if let Some(retry_after) = res.headers().get(http::header::RETRY_AFTER) {
-                            let retry_delay = match retry_after.to_str().unwrap().parse().unwrap() {
-                                RetryAfter::Duration(duration_seconds) => {
-                                    Duration::seconds(duration_seconds).to_std().unwrap()
-                                }
-                                RetryAfter::Timestamp(timestamp) => timestamp
-                                    .signed_duration_since(Utc::now())
-                                    .to_std()
-                                    .unwrap(),
-                            };
-                            RetryControl::Retry(Ok(res), Some(retry_delay))
-                        } else if res.status().is_server_error() {
-                            RetryControl::Retry(Ok(res), None)
-                        } else {
-                            RetryControl::Success(Ok(res))
-                        }
-                    }
-                    ret @ Err(_) => RetryControl::Fail(ret),
-                }
-            })
-            .await?;
+        let res =
+            crate::http::reqwest::execute_with_retry::<tokio::runtime::Handle, _>(client, 3, req)
+                .await?;
 
         match res.error_for_status() {
             Ok(res) => res.json().await.map_err(|err| err.into()),
@@ -376,63 +328,6 @@ mod tests {
     use http::Method;
     use reqwest::{Request, Response};
     use url::Url;
-
-    mod retry_after_parser {
-        use chrono::{DateTime, NaiveDate, Utc};
-        use http::HeaderValue;
-
-        use crate::cron::arweave::RetryAfter;
-
-        #[test]
-        fn parse_duration_in_seconds() {
-            let val = HeaderValue::from_static("1");
-            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
-
-            assert_eq!(retry_after, RetryAfter::Duration(1))
-        }
-
-        #[test]
-        fn parse_imf_fixdate_date() {
-            let val = HeaderValue::from_static("Sun, 06 Nov 1994 08:49:37 GMT");
-            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
-
-            assert_eq!(
-                retry_after,
-                RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
-                    NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
-                    Utc
-                ))
-            )
-        }
-
-        #[test]
-        fn parse_rfc850_date() {
-            let val = HeaderValue::from_static("Sunday, 06-Nov-94 08:49:37 GMT");
-            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
-
-            assert_eq!(
-                retry_after,
-                RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
-                    NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
-                    Utc
-                ))
-            )
-        }
-
-        #[test]
-        fn parse_asctime_date() {
-            let val = HeaderValue::from_static("Sun Nov  6 08:49:37 1994");
-            let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
-
-            assert_eq!(
-                retry_after,
-                RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
-                    NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
-                    Utc
-                ))
-            )
-        }
-    }
 
     #[actix_rt::test]
     async fn get_network_info() {

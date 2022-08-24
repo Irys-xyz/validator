@@ -1,4 +1,8 @@
+use std::str::FromStr;
+
+use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
+use futures::Future;
 
 #[cfg(feature = "reqwest-client")]
 pub mod reqwest;
@@ -6,6 +10,8 @@ pub mod reqwest;
 pub use http::Method;
 
 pub use http::{method, request, response};
+
+use crate::retry;
 
 pub trait ClientAccess<HttpClient>
 where
@@ -22,6 +28,26 @@ pub trait Client {
     fn execute(&self, req: Self::Request) -> BoxFuture<Result<Self::Response, Self::Error>>;
 }
 
+#[derive(Debug, PartialEq)]
+pub enum RetryAfter {
+    Timestamp(DateTime<Utc>),
+    Duration(i64),
+}
+
+impl FromStr for RetryAfter {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(after_seconds) = s.parse::<i64>() {
+            Ok(RetryAfter::Duration(after_seconds))
+        } else if let Ok(after_datetime) = httpdate::parse_http_date(s) {
+            Ok(RetryAfter::Timestamp(DateTime::from(after_datetime)))
+        } else {
+            Err(String::from("Not a valid value for Retry-After header"))
+        }
+    }
+}
+
 #[cfg(test)]
 pub mod mock {
     use std::{
@@ -31,7 +57,7 @@ pub mod mock {
         sync::{Arc, Mutex},
     };
 
-    use futures::future::BoxFuture;
+    use futures::{future::BoxFuture, Future};
     use log::error;
 
     use super::Client;
@@ -191,5 +217,63 @@ pub mod mock {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, NaiveDate, Utc};
+    use http::HeaderValue;
+
+    use super::RetryAfter;
+
+    #[test]
+    fn parse_duration_in_seconds() {
+        let val = HeaderValue::from_static("1");
+        let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+        assert_eq!(retry_after, RetryAfter::Duration(1))
+    }
+
+    #[test]
+    fn parse_imf_fixdate_date() {
+        let val = HeaderValue::from_static("Sun, 06 Nov 1994 08:49:37 GMT");
+        let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+        assert_eq!(
+            retry_after,
+            RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
+                NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
+                Utc
+            ))
+        )
+    }
+
+    #[test]
+    fn parse_rfc850_date() {
+        let val = HeaderValue::from_static("Sunday, 06-Nov-94 08:49:37 GMT");
+        let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+        assert_eq!(
+            retry_after,
+            RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
+                NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
+                Utc
+            ))
+        )
+    }
+
+    #[test]
+    fn parse_asctime_date() {
+        let val = HeaderValue::from_static("Sun Nov  6 08:49:37 1994");
+        let retry_after: RetryAfter = val.to_str().unwrap().parse().unwrap();
+
+        assert_eq!(
+            retry_after,
+            RetryAfter::Timestamp(DateTime::<Utc>::from_utc(
+                NaiveDate::from_ymd(1994, 11, 6).and_hms(8, 49, 37),
+                Utc
+            ))
+        )
     }
 }

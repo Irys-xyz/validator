@@ -1,23 +1,25 @@
-use std::{marker::PhantomData, time::Duration};
+use std::marker::PhantomData;
+
+use chrono::Duration;
 
 use futures::Future;
 
 pub trait Runtime {
-    type Sleep: Future<Output = ()>;
+    type Sleep: Future<Output = ()> + Send;
     fn sleep(duration: Duration) -> Self::Sleep;
 }
 
 impl Runtime for tokio::runtime::Handle {
     type Sleep = tokio::time::Sleep;
     fn sleep(duration: Duration) -> Self::Sleep {
-        tokio::time::sleep(duration)
+        tokio::time::sleep(duration.to_std().unwrap())
     }
 }
 
 impl Runtime for actix_rt::Runtime {
     type Sleep = actix_rt::time::Sleep;
     fn sleep(duration: Duration) -> Self::Sleep {
-        actix_rt::time::sleep(duration)
+        actix_rt::time::sleep(duration.to_std().unwrap())
     }
 }
 
@@ -29,7 +31,7 @@ pub enum RetryBackoffStrategy {
 
 impl Default for RetryBackoffStrategy {
     fn default() -> Self {
-        RetryBackoffStrategy::Exponential(Duration::from_secs(1))
+        RetryBackoffStrategy::Exponential(Duration::seconds(1))
     }
 }
 
@@ -100,12 +102,11 @@ where
     where
         'a: 'b,
         Fut: Future<Output = RetryControl<T>>,
-        F: Fn(&'a Ctx) -> Fut + 'b,
+        F: Fn(&'b Ctx) -> Fut + 'b,
     {
         let mut final_value: Option<T> = None;
-
         for i in 0..self.max_retries {
-            match payload(&ctx).await {
+            match payload(ctx).await {
                 RetryControl::Success(value) => return (self.success_handler)(value),
                 RetryControl::Fail(value) => return (self.failure_handler)(value, false),
                 RetryControl::Retry(value, Some(duration)) => {
@@ -121,7 +122,12 @@ where
                         }
                         RetryBackoffStrategy::Exponential(base) => {
                             // TODO: we should probably add some random time here
-                            Runtime::sleep(base.saturating_mul(2u8.pow(i.into()).into())).await
+                            Runtime::sleep(Duration::seconds(
+                                base.num_seconds()
+                                    .saturating_mul(2u8.pow(i.into()).into())
+                                    .into(),
+                            ))
+                            .await
                         }
                     }
                     continue;
@@ -155,7 +161,12 @@ where
                         }
                         RetryBackoffStrategy::Exponential(base) => {
                             // TODO: we should probably add some random time here
-                            Runtime::sleep(base.saturating_mul(2u8.pow(i.into()).into())).await
+                            Runtime::sleep(Duration::seconds(
+                                base.num_seconds()
+                                    .saturating_mul(2u8.pow(i.into()).into())
+                                    .into(),
+                            ))
+                            .await
                         }
                     }
                     continue;
@@ -184,9 +195,9 @@ mod tests {
     use std::{
         pin::Pin,
         sync::atomic::{AtomicI8, Ordering},
-        time::Duration,
     };
 
+    use chrono::Duration;
     use futures::{executor::LocalPool, Future};
 
     use super::{retry, RetryControl, Runtime};
