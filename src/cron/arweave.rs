@@ -249,12 +249,10 @@ impl Arweave {
             }
         );
 
-        // FIXME: urlencode raw_query
-        let url = format!(
-            "{}graphql?query={}",
-            self.get_host(),
-            urlencoding::encode(raw_query)
-        );
+        let url = self
+            .get_host()
+            .join(&format!("graphql?query={}", urlencoding::encode(raw_query)))
+            .expect("Invalid URL"); // FIXME: change result to support failing here
 
         // TODO: why to build object by parsing from string and then turn it later back to string
         let body = format!(
@@ -264,7 +262,7 @@ impl Arweave {
 
         let req: http::Request<String> = http::request::Builder::new()
             .method(http::Method::POST)
-            .uri(url)
+            .uri(url.to_string())
             .body(body)
             .expect("Failed to create request for fetching latest transactions");
 
@@ -348,7 +346,7 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client.clone());
         let arweave = Arweave {
-            url: Url::from_str("http://example.com").unwrap(),
+            url: Url::from_str("http://example.com/").unwrap(),
         };
         let network_info = arweave.get_network_info(&ctx).await.unwrap();
 
@@ -453,6 +451,66 @@ mod tests {
         let (key_manager, _bundle_pvk) = test_keys();
         let ctx = test_context_with_http_client(key_manager, client);
         let arweave = Arweave {
+            // Include slash at the end to make sure request building process won't
+            // duplicate slashes
+            url: Url::from_str("http://example.com/").unwrap(),
+        };
+        arweave
+            .get_latest_transactions(&ctx, "owner", None, None)
+            .await
+            .unwrap();
+    }
+
+    #[actix_rt::test]
+    async fn gateway_address_with_slash_in_the_end() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query%28%24owners%3A%20%5BString%21%5D%2C%20%24first%3A%20Int%29%20%7B%20transactions%28owners%3A%20%24owners%2C%20first%3A%20%24first%29%20%7B%20pageInfo%20%7B%20hasNextPage%20%7D%20edges%20%7B%20cursor%20node%20%7B%20id%20owner%20%7B%20address%20%7D%20signature%20recipient%20tags%20%7B%20name%20value%20%7D%20block%20%7B%20height%20id%20timestamp%20%7D%20%7D%20%7D%20%7D%20%7D";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\",\"recipient\": \"\", \"tags\": [], \"block\": null } } ] } } }";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let arweave = Arweave {
+            // test when gateway address has slash at the end and
+            // make sure appending rest of the URL is done right
+            url: Url::from_str("http://example.com/").unwrap(),
+        };
+        arweave
+            .get_latest_transactions(&ctx, "owner", None, None)
+            .await
+            .unwrap();
+    }
+
+    #[actix_rt::test]
+    async fn gateway_address_without_slash_in_the_end() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql?query=query%28%24owners%3A%20%5BString%21%5D%2C%20%24first%3A%20Int%29%20%7B%20transactions%28owners%3A%20%24owners%2C%20first%3A%20%24first%29%20%7B%20pageInfo%20%7B%20hasNextPage%20%7D%20edges%20%7B%20cursor%20node%20%7B%20id%20owner%20%7B%20address%20%7D%20signature%20recipient%20tags%20%7B%20name%20value%20%7D%20block%20%7B%20height%20id%20timestamp%20%7D%20%7D%20%7D%20%7D%20%7D";
+                req.method() == Method::POST && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = "{\"data\": {\"transactions\": {\"pageInfo\": {\"hasNextPage\": true },\"edges\": [{\"cursor\": \"cursor\", \"node\": { \"id\": \"tx_id\",\"owner\": {\"address\": \"address\"}, \"signature\": \"signature\",\"recipient\": \"\", \"tags\": [], \"block\": null } } ] } } }";
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let (key_manager, _bundle_pvk) = test_keys();
+        let ctx = test_context_with_http_client(key_manager, client);
+        let arweave = Arweave {
+            // test when gateway address has no slash at the end and
+            // make sure appending rest of the URL is done right
             url: Url::from_str("http://example.com").unwrap(),
         };
         arweave

@@ -73,7 +73,7 @@ where
         }
     );
 
-    let url = format!("{}/graphql", bundler.url);
+    let url = bundler.url.join("/graphql").expect("Invalid URL"); // FIXME: change result to support failing here
     let body = format!(
         "{{\"query\":\"{}\",\"variables\":{}}}",
         raw_query, raw_variables
@@ -107,4 +107,40 @@ where
     }
 
     Err(TxsError::TxNotFound)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use crate::{bundler::Bundler, http::reqwest::mock::MockHttpClient};
+    use http::Method;
+    use reqwest::{Request, Response};
+    use url::Url;
+
+    #[actix_rt::test]
+    async fn get_transactions() {
+        let client = MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+            .when(|req: &Request| {
+                let url = "http://example.com/graphql";
+                req.method() == Method::GET && &req.url().to_string() == url
+            })
+            .then(|_: &Request| {
+                let data = r#"{"data":{"transaction":{"pageInfo":{"hasNextPage":true},"edges":[{"cursor":"VUpaVk02SXc4RjA1a2FTaVh5X1pCMW9KNXNlNXQ2Mk5VTkFVb01yU3l6Zw","node":{"data_item_id":"UJZVM6Iw8F05kaSiXy_ZB1oJ5se5t62NUNAUoMrSyzg","address":"2nlaQMUL6IjJve8FET5DtxdT9Fk337_bbiBmvXAWBYY","current_block":942660,"expected_block":943060}}]}}}"#;
+                let response = http::response::Builder::new()
+                    .status(200)
+                    .body(data)
+                    .unwrap();
+                Response::from(response)
+            });
+
+        let bundler = Bundler::new(
+            "".to_string(),
+            // add slash at the end to make sure we won't accidentally duplicate those
+            Url::from_str("http://example.com/").unwrap(),
+        );
+        let _ = super::get_transactions(&client, &bundler, None, None)
+            .await
+            .unwrap();
+    }
 }

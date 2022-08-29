@@ -2,7 +2,6 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
-use futures::Future;
 
 #[cfg(feature = "reqwest-client")]
 pub mod reqwest;
@@ -10,8 +9,6 @@ pub mod reqwest;
 pub use http::Method;
 
 pub use http::{method, request, response};
-
-use crate::retry;
 
 pub trait ClientAccess<HttpClient>
 where
@@ -57,8 +54,7 @@ pub mod mock {
         sync::{Arc, Mutex},
     };
 
-    use futures::{future::BoxFuture, Future};
-    use log::error;
+    use futures::future::BoxFuture;
 
     use super::Client;
 
@@ -212,7 +208,7 @@ pub mod mock {
                     Box::pin(std::future::ready(Ok(res)))
                 }
                 None => {
-                    error!("no handler found for {:?}", req);
+                    eprintln!("no handler found for {:?}", req);
                     Box::pin(std::future::ready(Err(MockHttpClientError::ResponseNotSet)))
                 }
             }

@@ -67,7 +67,7 @@ impl AppContext {
     ) -> Self {
         let bundler_connection = Bundler {
             address: key_manager.bundler_address().to_owned(),
-            url: bundler_url.to_string(),
+            url: bundler_url.clone(),
         };
 
         let arweave_client = Arweave {
@@ -226,7 +226,7 @@ pub mod test_utils {
 
         let bundler_connection = Bundler {
             address: key_manager.bundler_address().to_owned(),
-            url: "".to_string(),
+            url: Url::from_str("http://bundler.example.com").unwrap(),
         };
 
         let arweave_client = Arweave {
@@ -263,7 +263,7 @@ pub mod test_utils {
 
         let bundler_connection = Bundler {
             address: key_manager.bundler_address().to_owned(),
-            url: "".to_string(),
+            url: Url::from_str("http://bundler.example.com").unwrap(),
         };
 
         let arweave_client = Arweave {

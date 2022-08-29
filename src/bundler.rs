@@ -10,10 +10,16 @@ pub struct BundlerConfig {
     pub addresses: HashMap<String, String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Bundler {
     pub address: String,
-    pub url: String, // FIXME: type of this field should be Url
+    pub url: Url,
+}
+
+impl Bundler {
+    pub fn new(address: String, url: Url) -> Self {
+        Bundler { address, url }
+    }
 }
 
 impl BundlerConfig {
