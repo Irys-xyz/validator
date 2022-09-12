@@ -5,16 +5,17 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 pub mod arweave;
-pub mod bundle;
 pub mod bundler;
 pub mod consts;
 pub mod context;
 pub mod contract_gateway;
 pub mod cron;
 pub mod database;
+pub mod dynamic_source;
 pub mod hardware;
 pub mod http;
 pub mod key_manager;
+pub mod pool;
 pub mod retry;
 pub mod server;
 pub mod state;

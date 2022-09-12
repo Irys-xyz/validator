@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use futures::{future::BoxFuture, Future};
+use futures::future::BoxFuture;
 
 use crate::retry::{self, RetryControl};
 

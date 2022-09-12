@@ -59,7 +59,7 @@ pub mod mock {
     use super::Client;
 
     struct Handler<Request, Response> {
-        matcher: fn(&Request) -> bool,
+        matcher: Pin<Box<dyn Fn(&Request) -> bool>>,
         response_builder: Pin<Box<dyn Fn(&Request) -> Response>>,
     }
 
@@ -71,8 +71,8 @@ pub mod mock {
     }
 
     pub struct Call<Request> {
-        req: Request,
-        count: usize,
+        pub req: Request,
+        pub count: usize,
     }
 
     impl<Request> Call<Request> {
@@ -81,16 +81,25 @@ pub mod mock {
         }
     }
 
-    pub struct When<Request, Response, Error> {
-        client: MockClient<Request, Response, Error>,
-        matcher: fn(&Request) -> bool,
+    impl<Request> From<(Request, usize)> for Call<Request> {
+        fn from((req, count): (Request, usize)) -> Self {
+            Self { req, count }
+        }
     }
 
-    impl<Request, Response, Error> When<Request, Response, Error> {
-        fn new(
-            client: MockClient<Request, Response, Error>,
-            matcher: fn(&Request) -> bool,
-        ) -> Self {
+    pub struct When<Predicate, Request, Response, Error>
+    where
+        Predicate: Fn(&Request) -> bool + 'static,
+    {
+        client: MockClient<Request, Response, Error>,
+        matcher: Predicate,
+    }
+
+    impl<Predicate, Request, Response, Error> When<Predicate, Request, Response, Error>
+    where
+        Predicate: Fn(&Request) -> bool,
+    {
+        fn new(client: MockClient<Request, Response, Error>, matcher: Predicate) -> Self {
             Self { client, matcher }
         }
 
@@ -99,7 +108,7 @@ pub mod mock {
             F: Fn(&Request) -> Response + 'static,
         {
             self.client
-                .register_handler(self.matcher, Box::pin(response_builder))
+                .register_handler(Box::pin(self.matcher), Box::pin(response_builder))
         }
     }
 
@@ -150,7 +159,7 @@ pub mod mock {
 
         fn register_handler(
             self,
-            matcher: fn(&Request) -> bool,
+            matcher: Pin<Box<dyn Fn(&Request) -> bool>>,
             response_builder: Pin<Box<dyn Fn(&Request) -> Response>>,
         ) -> Self {
             {
@@ -163,7 +172,13 @@ pub mod mock {
             self
         }
 
-        pub fn when(self, matcher: fn(&Request) -> bool) -> When<Request, Response, Error> {
+        pub fn when<Predicate>(
+            self,
+            matcher: Predicate,
+        ) -> When<Predicate, Request, Response, Error>
+        where
+            Predicate: Fn(&Request) -> bool,
+        {
             When::new(self, matcher)
         }
 

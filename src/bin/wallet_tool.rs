@@ -2,7 +2,6 @@ use std::{fs, io::stdin};
 
 use clap::{Parser, Subcommand};
 use jsonwebkey::{JsonWebKey, Key, PublicExponent, RsaPrivate, RsaPublic};
-use log::debug;
 use openssl::rsa::Rsa;
 
 use validator::key_manager;
