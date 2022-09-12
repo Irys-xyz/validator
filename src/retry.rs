@@ -236,6 +236,26 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn retry_with_tokio_runtime() {
+        let res: Result<(), ()> = retry::<tokio::runtime::Handle, _>()
+            .max_retries(5)
+            .run(|| async move { RetryControl::Success(Ok(())) })
+            .await;
+
+        assert_eq!(res, Ok(()));
+    }
+
+    #[actix_rt::test]
+    async fn retry_with_actix_runtime() {
+        let res: Result<(), ()> = retry::<actix_rt::Runtime, _>()
+            .max_retries(5)
+            .run(|| async move { RetryControl::Success(Ok(())) })
+            .await;
+
+        assert_eq!(res, Ok(()));
+    }
+
     #[test]
     fn retry_returns_correct_value_after_third_try_is_successful() {
         let mut rt = LocalPool::new();

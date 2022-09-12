@@ -40,38 +40,7 @@ where
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
 {
-    let arweave = ctx.arweave();
-    let bundler = ctx.bundler();
-    let latest_transactions_response = arweave
-        .get_latest_transactions(ctx, &bundler.address, Some(50), None)
-        .await;
-
-    let latest_transactions = match latest_transactions_response {
-        Err(err) => {
-            error!(
-                "Error occurred while getting txs from bundler address: \n {}. Error: {}",
-                bundler.address, err
-            );
-            return Err(ValidatorCronError::TxsFromAddressNotFound);
-        }
-        Ok((latest_transactions, _, _)) => latest_transactions,
-    };
-
-    for bundle in latest_transactions {
-        let res = validate_bundle(ctx, arweave, &bundle).await;
-        if let Err(err) = res {
-            match err {
-                ValidatorCronError::TxNotFound => todo!(),
-                ValidatorCronError::AddressNotFound => todo!(),
-                ValidatorCronError::TxsFromAddressNotFound => todo!(),
-                ValidatorCronError::BundleNotInsertedInDB => todo!(),
-                ValidatorCronError::TxInvalid => todo!(),
-                ValidatorCronError::FileError => (),
-            }
-        }
-    }
-
-    Ok(())
+    todo!()
 }
 
 async fn validate_bundle<Context, HttpClient, KeyManager>(
@@ -88,66 +57,11 @@ where
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
 {
-    let block_ok = check_bundle_block(bundle);
-    let current_block = match block_ok {
-        Err(err) => return Err(err),
-        Ok(None) => return Ok(()),
-        Ok(Some(block)) => block,
-    };
-
-    store_bundle(ctx, bundle, current_block)?;
-
-    let path = match arweave.get_tx_data(ctx, &bundle.id).await {
-        Ok(path) => path,
-        Err(err) => {
-            error!("File path error {:?}", err);
-            return Err(ValidatorCronError::FileError);
-        }
-    };
-
-    let bundle_txs = match verify_file_bundle(path.clone()).await {
-        Err(r) => {
-            error!("Error verifying bundle {}:", r);
-            Vec::new()
-        }
-        Ok(v) => v,
-    };
-
-    info!(
-        "{} transactions found in bundle {}",
-        &bundle_txs.len(),
-        &bundle.id
-    );
-    for bundle_tx in bundle_txs {
-        let tx_receipt = verify_bundle_tx(ctx, &bundle_tx, Some(current_block)).await;
-        if let Err(err) = tx_receipt {
-            info!("Error found in transaction {} : {}", &bundle_tx.tx_id, err);
-            return Err(ValidatorCronError::TxInvalid);
-        }
-    }
-    info!("All transactions ok in bundle {}", &bundle.id);
-
-    /*
-    match std::fs::remove_file(path.clone()) {
-        Ok(_r) => info!("Successfully deleted {}", path),
-        Err(err) => error!("Error deleting file {} : {}", path, err),
-    };
-    */
-
-    Ok(())
+    todo!()
 }
 
 fn check_bundle_block(bundle: &ArweaveTx) -> Result<Option<u128>, ValidatorCronError> {
-    let current_block = match bundle.block {
-        Some(ref block) => block.height,
-        None => {
-            info!("Bundle {} not included in any block", &bundle.id);
-            return Ok(None);
-        }
-    };
-
-    info!("Bundle {} included in block {}", &bundle.id, current_block);
-    Ok(Some(current_block))
+    todo!()
 }
 
 fn store_bundle<Context>(
@@ -158,28 +72,7 @@ fn store_bundle<Context>(
 where
     Context: queries::QueryContext + BundlerAccess,
 {
-    let is_bundle_present = get_bundle(ctx, &bundle.id).is_ok();
-    if !is_bundle_present {
-        return match insert_bundle_in_db(
-            ctx,
-            NewBundle {
-                id: bundle.id.clone(),
-                owner_address: ctx.bundler().address.clone(),
-                block_height: Block(current_block),
-            },
-        ) {
-            Ok(()) => {
-                info!("Bundle {} successfully stored", &bundle.id);
-                Ok(())
-            }
-            Err(err) => {
-                error!("Error when storing bundle {} : {}", &bundle.id, err);
-                Err(ValidatorCronError::BundleNotInsertedInDB)
-            }
-        };
-    }
-
-    Ok(())
+    todo!()
 }
 
 async fn verify_bundle_tx<Context, HttpClient, KeyManager>(
@@ -192,54 +85,7 @@ where
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
     KeyManager: key_manager::KeyManager,
 {
-    // TODO: this code needs review, especially error handling for get_tx looks suspicious
-    let tx = get_tx(ctx, &bundle_tx.tx_id).await;
-    let mut tx_receipt: Option<TxReceipt> = None;
-    if tx.is_ok() {
-        let tx = tx.unwrap();
-        tx_receipt = Some(TxReceipt {
-            block: tx.block_promised.into(),
-            tx_id: tx.id,
-            signature: match std::str::from_utf8(&tx.signature.to_vec()) {
-                Ok(v) => v.to_string(),
-                Err(e) => panic!("Invalid UTF-8 seq: {}", e),
-            },
-        });
-    } else {
-        let peer_tx = tx_exists_on_peers(ctx, &bundle_tx.tx_id).await;
-        if peer_tx.is_ok() {
-            tx_receipt = Some(peer_tx.unwrap());
-        }
-    }
-
-    match tx_receipt {
-        Some(receipt) => {
-            let tx_is_ok = verify_tx_receipt(ctx.get_key_manager(), &receipt).unwrap();
-            // FIXME: don't use unwrap
-            if tx_is_ok && receipt.block <= current_block.unwrap() {
-                let tx = NewTransaction {
-                    id: receipt.tx_id,
-                    epoch: Epoch(0),
-                    block_promised: receipt.block.into(),
-                    block_actual: current_block.map(Block),
-                    signature: receipt.signature.as_bytes().to_vec(),
-                    validated: true,
-                    bundle_id: Some(bundle_tx.tx_id.clone()),
-                };
-                if let Err(err) = insert_tx_in_db(ctx, &tx) {
-                    error!("Error inserting new tx {}, Error: {}", tx.id, err);
-                    // TODO: is it enough to log this error?
-                }
-            } else {
-                // TODO: vote slash
-            }
-        }
-        None => {
-            // TODO: handle unfound txreceipt
-        }
-    }
-
-    Ok(())
+    todo!()
 }
 
 async fn tx_exists_on_peers<Context, HttpClient>(
@@ -250,32 +96,7 @@ where
     Context: http::ClientAccess<HttpClient>,
     HttpClient: http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let client = ctx.get_http_client();
-    let validator_peers = Vec::<Validator>::new();
-    for peer in validator_peers {
-        let req = http::request::Builder::new()
-            .method(http::Method::GET)
-            .uri(format!("{}/tx/{}", peer.url, tx_id))
-            .body("".to_owned())
-            .unwrap();
-
-        let req: reqwest::Request = reqwest::Request::try_from(req).unwrap();
-        let response = client.execute(req).await;
-
-        if let Err(r) = response {
-            error!("Error occurred while getting tx from peer - {:?}", r);
-            continue;
-        }
-
-        // FIXME: do not unwrap.
-        let response = response.unwrap();
-
-        if response.status().is_success() {
-            return Ok(response.json().await.unwrap());
-        }
-    }
-
-    Err(ValidatorCronError::TxNotFound)
+    todo!()
 }
 
 fn verify_tx_receipt<KeyManager>(
@@ -285,25 +106,7 @@ fn verify_tx_receipt<KeyManager>(
 where
     KeyManager: key_manager::KeyManager,
 {
-    pub const BUNDLR_AS_BUFFER: &[u8] = "Bundlr".as_bytes();
-
-    let block = tx_receipt.block.to_string().as_bytes().to_vec();
-
-    let tx_id = tx_receipt.tx_id.as_bytes().to_vec();
-
-    let message = deep_hash_sync(DeepHashChunk::Chunks(vec![
-        DeepHashChunk::Chunk(BUNDLR_AS_BUFFER.into()),
-        DeepHashChunk::Chunk(ONE_AS_BUFFER.into()),
-        DeepHashChunk::Chunk(tx_id.into()),
-        DeepHashChunk::Chunk(block.into()),
-    ]))
-    .unwrap();
-
-    let sig = BASE64URL_NOPAD
-        .decode(tx_receipt.signature.as_bytes())
-        .unwrap();
-
-    Ok(key_manager.verify_bundler_signature(&message, &sig))
+    todo!()
 }
 
 pub async fn validate_transactions<HttpClient>(
@@ -313,22 +116,7 @@ pub async fn validate_transactions<HttpClient>(
 where
     HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
-    let res = get_transactions(http_client, bundler, Some(100), None).await;
-    let txs = match res {
-        Ok(r) => r.0,
-        Err(_) => Vec::new(),
-    };
-
-    for tx in txs {
-        // TODO: validate transacitons
-        let block_ok = tx.current_block < tx.expected_block;
-
-        if block_ok {
-            let _res = vote_slash(bundler);
-        }
-    }
-
-    Ok(())
+    todo!()
 }
 
 #[cfg(test)]

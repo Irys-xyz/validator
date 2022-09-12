@@ -41,6 +41,9 @@ tokio = { version = "1.19", features = ["full"] }
 url = { version = "2.2.2" }
 urlencoding = "2.1.0"
 
+[dev-dependencies]
+project-root = "0.2.2"
+
 [dev-dependencies.cargo-husky]
 version = "1"
 default-features = false
@@ -66,3 +69,15 @@ path = "src/bin/wallet_tool.rs"
 [[bin]]
 name = "message-builder"
 path = "src/bin/message_builder.rs"
+
+[[bin]]
+name = "chain-view"
+path = "src/bin/chain_view.rs"
+
+[[bin]]
+name = "download-transaction"
+path = "src/bin/download_transaction.rs"
+
+[[bin]]
+name = "crawl-peers"
+path = "src/bin/crawl_peers.rs"
