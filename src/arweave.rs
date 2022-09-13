@@ -1,20 +1,20 @@
+use bytes::{Buf, BufMut};
+use chrono::Utc;
+use data_encoding::BASE64URL_NOPAD;
 use derive_more::{Display, Error};
-use diesel::expression::UncheckedBind;
 use futures::future::BoxFuture;
-use futures::{pin_mut, stream, FutureExt, StreamExt, TryFutureExt};
-use http::header::CONTENT_LENGTH;
-use http::{StatusCode, Uri};
-use log::{debug, error, info, warn};
+use futures::{pin_mut, FutureExt, StreamExt};
+use http::header::{ToStrError, CONTENT_LENGTH};
+use http::Uri;
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{self, Debug};
-use std::pin::Pin;
-use std::sync::atomic::{AtomicU16, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufWriter};
 
 use std::num::ParseIntError;
 use std::str::FromStr;
@@ -22,9 +22,9 @@ use url::Url;
 
 use crate::dynamic_source::DynamicSource;
 use crate::http::reqwest::execute_with_retry;
-use crate::http::{Client, ClientAccess};
+use crate::http::{Client, ClientAccess, RetryAfter};
 use crate::key_manager::public_key_to_address;
-use crate::pool::Pool;
+use crate::retry::{retry, RetryControl};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -307,6 +307,12 @@ impl FromStr for TransactionSize {
     }
 }
 
+impl Into<u64> for TransactionSize {
+    fn into(self) -> u64 {
+        self.0 as u64
+    }
+}
+
 impl TryFrom<String> for TransactionSize {
     type Error = ParseIntError;
 
@@ -384,6 +390,11 @@ pub struct Offset {
     offset: u64,
     #[serde(with = "serde_stringify")]
     size: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct Chunk<'a> {
+    chunk: &'a [u8],
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -538,66 +549,6 @@ where
     }
     .boxed()
 }
-
-// fn get_peers<'a, HttpClient>(
-//     client: &'a HttpClient,
-//     node: &'a Node,
-//     timeout: Option<Duration>,
-// ) -> BoxFuture<'a, Result<Vec<Node>, FetchPeersError<HttpClient::Error>>>
-// where
-//     HttpClient:
-//         Client<Request = reqwest::Request, Response = reqwest::Response> + Send + Sync + 'static,
-//     HttpClient::Error: From<reqwest::Error>,
-// {
-//     async move {
-//         debug!("Get peers for {}", node);
-//         let url =
-//             match Url::from_str(&format!("http://{}", node)).and_then(|base| base.join("/peers")) {
-//                 Ok(url) => url,
-//                 Err(err) => {
-//                     debug!(
-//                         "Failed to build URL request peers for node: {}, {:?}",
-//                         node, err
-//                     );
-//                     return Err(FetchPeersError::UnsupportedPeerAddress(node.clone()));
-//                 }
-//             };
-
-//         let res = match get(client, url, timeout).await {
-//             Ok(res) => match res.error_for_status() {
-//                 Ok(res) => res,
-//                 Err(err) => {
-//                     debug!(
-//                         "Request for fetching peers failed, peer: {}, err: {:?}",
-//                         node, err
-//                     );
-//                     return Err(FetchPeersError::HttpClientError(err.into()));
-//                 }
-//             },
-//             Err(err) => {
-//                 error!(
-//                     "Request for fetching peers failed, peer: {}, err: {:?}",
-//                     node, err
-//                 );
-//                 return Err(FetchPeersError::ArweaveError(err));
-//             }
-//         };
-
-//         let peers: Vec<Node> = match res.json().await {
-//             Ok(peers) => peers,
-//             Err(err) => {
-//                 error!(
-//                     "Failed to deserialize peers, peer: {}, error: {:?}",
-//                     node, err
-//                 );
-//                 return Err(FetchPeersError::ResponseDeserializationError);
-//             }
-//         };
-
-//         Ok(peers)
-//     }
-//     .boxed()
-// }
 
 #[derive(Debug, Display, Error, Clone, PartialEq)]
 pub enum ArweaveError {
@@ -834,7 +785,7 @@ impl Arweave {
         Context: ClientAccess<HttpClient>,
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
         HttpClient::Error: From<reqwest::Error>,
-        Output: AsyncWrite + Unpin,
+        Output: AsyncWrite + AsyncSeek + Unpin,
     {
         let client = ctx.get_http_client();
         let base_url = if let Some(ref peer) = peer {
@@ -854,11 +805,12 @@ impl Arweave {
             ArweaveError::UnknownErr
         })?;
 
-        let mut download_size = 0;
+        info!("Transaction offset={}, size={}", offset, size);
 
-        while download_size < size {
-            let chunk_offset = offset - download_size;
-
+        let end_offset = offset;
+        let start_offset = offset - size + 1;
+        let mut chunk_offset = start_offset;
+        while chunk_offset < end_offset + 1 {
             let url = self
                 .base_url
                 .join(&format!("/chunk/{}", &chunk_offset))
@@ -869,24 +821,58 @@ impl Arweave {
 
             let mut res = get(client, url, None).await?;
 
-            let chunk_size = res.headers().get(CONTENT_LENGTH).ok_or_else(|| {
-                error!("Could not read chunk size, missing Content-Length header");
-                ArweaveError::RequestFailed
-            })?;
+            let content_length: u64 = res
+                .headers()
+                .get(CONTENT_LENGTH)
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .ok_or_else(|| {
+                    error!("Could not read chunk size, missing Content-Length header");
+                    ArweaveError::RequestFailed
+                })?;
 
-            let chunk_size: u64 = chunk_size.to_str().unwrap().parse().unwrap();
-            info!("Chunk: offset={}, size={}", chunk_offset, chunk_size);
+            let file_offset = chunk_offset - start_offset;
 
+            // This is not strictly needed at the moment, but keeping as
+            // an example, because this will be needed once we add retry
+            // and concurrency
+            output
+                .seek(std::io::SeekFrom::Start(file_offset))
+                .await
+                .map_err(|err| {
+                    error!(
+                        "Failed to seek into the right position in the output: {:?}",
+                        err
+                    );
+                    ArweaveError::RequestFailed
+                })?;
+
+            let mut buf = Vec::with_capacity(content_length as usize);
             while let Some(chunk) = res.chunk().await.map_err(|err| {
                 error!("Failed to read chunk data: {:?}", err);
                 ArweaveError::RequestFailed
             })? {
-                download_size += chunk.len() as u64;
-                output.write_all(&chunk).await.map_err(|err| {
+                buf.write_all(&chunk).await.map_err(|err| {
                     error!("Failed to write chunk data to output: {:?}", err);
                     ArweaveError::RequestFailed
                 })?;
             }
+            let chunk: Chunk = serde_json::from_slice(buf.as_slice()).unwrap();
+            let data = BASE64URL_NOPAD.decode(chunk.chunk).unwrap();
+
+            output.write_all(data.as_slice()).await.map_err(|err| {
+                error!("Failed to write chunk data: {:?}", err);
+                ArweaveError::UnknownErr
+            })?;
+
+            let chunk_size = data.len() as u64;
+
+            info!(
+                "Got chunk: offset={}, chunk_size={}",
+                chunk_offset, chunk_size
+            );
+
+            chunk_offset += chunk_size;
         }
 
         Ok(())

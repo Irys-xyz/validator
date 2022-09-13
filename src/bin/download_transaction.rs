@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    fs::{self, DirBuilder},
+    path::PathBuf,
+};
 
 use clap::Parser;
 
@@ -7,7 +10,7 @@ use log::info;
 use tokio::fs::File;
 use url::Url;
 use validator::{
-    arweave::{Arweave, ArweaveContext, ArweaveError, TransactionId},
+    arweave::{Arweave, ArweaveContext, Transaction, TransactionId},
     http::{reqwest::ReqwestClient, ClientAccess},
 };
 
@@ -46,7 +49,7 @@ impl ArweaveContext<ReqwestClient> for Context {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), ArweaveError> {
+async fn main() {
     dotenv::dotenv().ok();
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
@@ -55,18 +58,40 @@ async fn main() -> Result<(), ArweaveError> {
     let arweave = Arweave::new(args.arweave_gateway.clone());
     let ctx = Context::new(reqwest::Client::default());
 
-    let mut tx_data_file = args.tx_cache.clone();
+    if !args
+        .tx_cache
+        .try_exists()
+        .expect("Failed to check if tx cache folder exists")
+    {
+        DirBuilder::new()
+            .recursive(true)
+            .create(args.tx_cache.clone())
+            .expect("Failed to create tx cache dir");
+    }
+
+    let mut tx_data_file = args.tx_cache;
     tx_data_file.push(format!("{}", args.tx));
-    // let tx_data_file = fs::canonicalize(tx_data_file)
-    //     .expect("Failed to create absolute file path from provided information");
 
-    info!("Write tx data to {:?}", tx_data_file);
+    let Transaction { data_size, .. } = arweave
+        .get_transaction_info(&ctx, &args.tx)
+        .await
+        .expect("Failed to fetch transaction size info");
 
-    let mut output = File::create(tx_data_file)
+    let mut output = File::create(tx_data_file.clone())
         .await
         .expect("Failed to open file for writing");
+
+    output
+        .set_len(data_size.into())
+        .await
+        .expect("Failed to set file size to match transaction data size");
 
     arweave
         .download_transaction_data(&ctx, &args.tx, &mut output, None)
         .await
+        .expect("Failed to download transaction data");
+
+    let file_path = fs::canonicalize(tx_data_file)
+        .expect("Failed to create absolute file path from provided information");
+    info!("Wrote tx data to {}", file_path.to_str().unwrap());
 }
