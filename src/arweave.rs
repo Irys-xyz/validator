@@ -790,6 +790,7 @@ impl Arweave {
         tx: &TransactionId,
         output: &mut Output,
         peer: Option<Url>,
+        // concurrency_level: Option<u16>
     ) -> Result<(), ArweaveError>
     where
         Context: ClientAccess<HttpClient>,
@@ -820,6 +821,11 @@ impl Arweave {
         let end_offset = offset;
         let start_offset = offset - size + 1;
         let mut chunk_offset = start_offset;
+
+        let chunk_stuff: Vec<Vec<u8>> = vec![];
+        let chunks = DynamicAsyncQueue::new(chunk_stuff);
+        let tasks = Vec::<tokio::task::JoinHandle<()>>::new();
+
         while chunk_offset < end_offset + 1 {
             let url = self
                 .base_url
@@ -830,6 +836,10 @@ impl Arweave {
                 })?;
 
             let mut res = get(client, url, None).await?;
+
+            if res.status() == http::StatusCode::NOT_FOUND {
+                todo!("Node doesn't have chunk, retry with another node");
+            }
 
             let content_length: u64 = res
                 .headers()
