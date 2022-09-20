@@ -10,3 +10,6 @@ wallet*.json
 /db/validator.db
 .history
 .devcontainer
+
+# Jupyter Notebook files
+.ipynb_checkpoints/
