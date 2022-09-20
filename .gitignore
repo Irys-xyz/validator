@@ -10,3 +10,4 @@ wallet*.json
 /db/validator.db
 .history
 .devcontainer
+tx-cache
