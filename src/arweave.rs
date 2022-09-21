@@ -1,16 +1,15 @@
-use bytes::{Buf, BufMut};
-use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
 use derive_more::{Display, Error};
 use futures::future::BoxFuture;
 use futures::{pin_mut, FutureExt, StreamExt};
-use http::header::{ToStrError, CONTENT_LENGTH};
+use http::header::CONTENT_LENGTH;
 use http::Uri;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{self, Debug};
+use std::os::unix::prelude::FileExt;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,6 +19,7 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 use url::Url;
 
+use crate::consts::CHUNK_SIZE;
 use crate::dynamic_source::DynamicSource;
 use crate::http::reqwest::execute_with_retry;
 use crate::http::{Client, ClientAccess, RetryAfter};
@@ -777,6 +777,7 @@ impl Arweave {
     pub async fn download_transaction_data<Context, HttpClient, Output>(
         &self,
         ctx: &Context,
+        concurrency_level: u16,
         tx: &TransactionId,
         output: &mut Output,
         peer: Option<Url>,
@@ -786,8 +787,9 @@ impl Arweave {
         Context: ClientAccess<HttpClient>,
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
         HttpClient::Error: From<reqwest::Error>,
-        Output: AsyncWrite + AsyncSeek + Unpin,
+        Output: FileExt,
     {
+        let concurrency_level  = concurrency_level as usize;
         let client = ctx.get_http_client();
         let base_url = if let Some(ref peer) = peer {
             peer
@@ -807,83 +809,111 @@ impl Arweave {
         })?;
 
         info!("Transaction offset={}, size={}", offset, size);
-
-        let end_offset = offset;
         let start_offset = offset - size + 1;
-        let mut chunk_offset = start_offset;
 
-        let chunk_stuff : Vec<Vec<u8>> = vec![];
-        let chunks = DynamicSource::new(chunk_stuff);
-        let tasks = Vec::<tokio::task::JoinHandle<()>>::new();
+        let mut filled_size = 0;
+        let mut chunks_indexes = Vec::<(u64, u64)>::new();
         
-        while chunk_offset < end_offset + 1 {
-            let url = self
+        while filled_size < size + 1 && filled_size + CHUNK_SIZE < size {
+            chunks_indexes.push((start_offset + filled_size, CHUNK_SIZE));
+            info!("Chunk offset={}, size={}", start_offset + filled_size, CHUNK_SIZE);
+            filled_size += CHUNK_SIZE;
+        }
+        chunks_indexes.push((start_offset + filled_size, size % CHUNK_SIZE));
+        info!("Chunk offset={}, size={}", start_offset + filled_size, size % CHUNK_SIZE);
+
+        let chunks_indexes = DynamicSource::new(chunks_indexes);
+        let busy_jobs = Arc::new(AtomicU16::new(0));
+        let notifier = chunks_indexes.clone();
+
+        pin_mut!(busy_jobs);
+
+        let chunks = chunks_indexes
+            .map(|(offset, expected_size)| {
+                busy_jobs.fetch_add(1, Ordering::Relaxed);
+                let url = self
                 .base_url
-                .join(&format!("/chunk/{}", &chunk_offset))
-                .map_err(|err| {
-                    error!("Failed to build request Url: {:?}", err);
-                    ArweaveError::MalformedRequest
-                })?;
+                    .join(&format!("/chunk/{}", offset))
+                    .map_err(|err| {
+                        error!("Failed to build request Url: {:?}", err);
+                        ArweaveError::MalformedRequest
+                    })
+                    .expect("Unable to build url");
+                
+                get(client.clone(), url, None)
+                    .map(move |res| (res, offset, expected_size))
+            })
+            .buffer_unordered(concurrency_level)
+            .filter_map(|(res, offset, expected_size )| {
+                let notifier = notifier.clone();
+                let busy_jobs = busy_jobs.clone();
+                async move {
+                    if let Err(err) = res {
+                        error!("{}", err);
+                        return None
+                    }
+                    let mut res = res.unwrap();
+                    if res.status() == http::StatusCode::NOT_FOUND {
+                        error!("Chunk {} {}", offset, http::StatusCode::NOT_FOUND);
+                        return None
+                    }
 
-            let mut res = get(client, url, None).await?;
+                    let content_length: u64 = res
+                        .headers()
+                        .get(CONTENT_LENGTH)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .ok_or_else(|| {
+                            error!("Could not read chunk size, missing Content-Length header");
+                            ArweaveError::RequestFailed
+                        })
+                        .unwrap();
+                    
+                    // Getting contents
+                    let mut buf = Vec::with_capacity(content_length as usize);
+                    while let Some(chunk) = match res.chunk().await {
+                        Ok(chunk) => chunk,
+                        Err(err) => {
+                            error!("Failed to read chunk data: {:?}", err);
+                            None
+                        },
+                    }{
+                        buf.write_all(&chunk).await.map_err(|err| {
+                            error!("Failed to write chunk data to output: {:?}", err);
+                            ArweaveError::RequestFailed
+                        }).unwrap();
+                    }
+                    let chunk: Chunk = match serde_json::from_slice(buf.as_slice()) {
+                        Ok(chunk) => chunk,
+                        Err(_) => Chunk { chunk: &[] },
+                    };
+                    let chunk = BASE64URL_NOPAD.decode(chunk.chunk)
+                        .unwrap();
+                    
+                    let busy_jobs = busy_jobs.fetch_sub(1, Ordering::Relaxed);
+                    // busy_jobs here is the previous value before decrementing
+                    if busy_jobs < 2 {
+                        notifier.all_pending_work_done();
+                    }
 
-            if res.status() == http::StatusCode::NOT_FOUND {
-                todo!("Node doesn't have chunk, retry with another node");
-            }
-
-            let content_length: u64 = res
-                .headers()
-                .get(CONTENT_LENGTH)
-                .and_then(|h| h.to_str().ok())
-                .and_then(|s| s.parse::<u64>().ok())
-                .ok_or_else(|| {
-                    error!("Could not read chunk size, missing Content-Length header");
-                    ArweaveError::RequestFailed
-                })?;
-
-            let file_offset = chunk_offset - start_offset;
-
-            // This is not strictly needed at the moment, but keeping as
-            // an example, because this will be needed once we add retry
-            // and concurrency
-            output
-                .seek(std::io::SeekFrom::Start(file_offset))
-                .await
-                .map_err(|err| {
-                    error!(
-                        "Failed to seek into the right position in the output: {:?}",
-                        err
+                    info!(
+                        "Got chunk: offset={} size={} expected_size={}",
+                        offset, chunk.len(), expected_size
                     );
-                    ArweaveError::RequestFailed
-                })?;
 
-            let mut buf = Vec::with_capacity(content_length as usize);
-            while let Some(chunk) = res.chunk().await.map_err(|err| {
-                error!("Failed to read chunk data: {:?}", err);
-                ArweaveError::RequestFailed
-            })? {
-                buf.write_all(&chunk).await.map_err(|err| {
-                    error!("Failed to write chunk data to output: {:?}", err);
-                    ArweaveError::RequestFailed
-                })?;
+                    Some((chunk, offset, size))
+                }
+            })
+            .collect::<Vec<(Vec<u8>, u64, u64)>>()
+            .await;
+
+        info!("{} chunks fetched, writing file...", chunks.len());
+        for (chunk, pos, size) in chunks {
+            if let Err(e) = output.write_at(&chunk, pos) {
+                error!("Failed to write chunk data: {:?}", e);
+                return Err(ArweaveError::UnknownErr);
             }
-            let chunk: Chunk = serde_json::from_slice(buf.as_slice()).unwrap();
-            let data = BASE64URL_NOPAD.decode(chunk.chunk).unwrap();
-
-            output.write_all(data.as_slice()).await.map_err(|err| {
-                error!("Failed to write chunk data: {:?}", err);
-                ArweaveError::UnknownErr
-            })?;
-
-            let chunk_size = data.len() as u64;
-
-            info!(
-                "Got chunk: offset={}, chunk_size={}",
-                chunk_offset, chunk_size
-            );
-
-            chunk_offset += chunk_size;
-        };
+        }
 
         Ok(())
     }
