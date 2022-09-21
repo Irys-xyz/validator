@@ -84,7 +84,7 @@ async fn main() {
         .await
         .expect("Failed to open metadata file for writing");
 
-    let mut data_file = File::create(tx_data_file.clone())
+    let data_file = File::create(tx_data_file.clone())
         .await
         .expect("Failed to open data file for writing");
 
@@ -93,8 +93,10 @@ async fn main() {
         .await
         .expect("Failed to reserve space for data file");
 
+    let mut data_file = data_file.into_std().await;
+
     arweave
-        .download_transaction_data(&ctx, &args.tx, &mut data_file, None)
+        .download_transaction_data(&ctx, 16, &args.tx, &mut data_file, None)
         .await
         .expect("Failed to download transaction data");
 
