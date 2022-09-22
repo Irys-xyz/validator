@@ -96,7 +96,7 @@ async fn main() {
     let mut data_file = data_file.into_std().await;
 
     arweave
-        .download_transaction_data(&ctx, 16, &args.tx, &mut data_file, None)
+        .download_transaction_data(&ctx, 16, &args.tx, &mut data_file, None, None)
         .await
         .expect("Failed to download transaction data");
 
