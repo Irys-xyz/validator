@@ -77,7 +77,7 @@ async fn main() {
         .await
         .expect("Failed to fetch transaction size info");
 
-    let output = File::create(tx_data_file.clone())
+    let mut output = File::create(tx_data_file.clone())
         .await
         .expect("Failed to open file for writing");
 
@@ -85,8 +85,6 @@ async fn main() {
         .set_len(data_size.into())
         .await
         .expect("Failed to set file size to match transaction data size");
-
-    let mut output = output.into_std().await;
 
     arweave
         .download_transaction_data(&ctx, 16, &args.tx, &mut output, None, None)
