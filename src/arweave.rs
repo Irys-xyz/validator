@@ -869,7 +869,6 @@ impl Arweave {
                     let res = res.unwrap();
                     if res.status() == http::StatusCode::NOT_FOUND {
                         error!("Chunk {} not found in this peer", offset);
-                        return None;
                     }
                     Some((i, res, offset, file_offset, expected_size))
                 }
