@@ -791,7 +791,7 @@ impl Arweave {
         HttpClient::Error: From<reqwest::Error>,
         Output: AsyncWrite + AsyncSeek + Unpin,
     {
-        let retries_per_chunk = if retries_per_chunk.is_some() { retries_per_chunk.unwrap() } else { DEFAULT_RETRIES_PER_CHUNK };
+        let retries_per_chunk = retries_per_chunk.unwrap_or(DEFAULT_RETRIES_PER_CHUNK);
         let concurrency_level  = concurrency_level as usize;
         let client = ctx.get_http_client();
         let base_url = if let Some(ref peer) = peer {
