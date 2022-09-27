@@ -94,7 +94,7 @@ async fn main() {
         .expect("Failed to reserve space for data file");
 
     arweave
-        .download_transaction_data(&ctx, 16, &args.tx, &mut data_file, None, None)
+        .download_transaction_data(&ctx, 16, &args.tx, &mut data_file, vec![], None)
         .await
         .expect("Failed to download transaction data");
 

@@ -792,7 +792,7 @@ impl Arweave {
         concurrency_level: u16,
         tx: &TransactionId,
         output: &mut Output,
-        peer: Option<Url>,
+        peers: Vec<Url>,
         retries_per_chunk: Option<u16>,
         // concurrency_level: Option<u16>
     ) -> Result<(), ArweaveError>
@@ -805,7 +805,7 @@ impl Arweave {
         let retries_per_chunk = retries_per_chunk.unwrap_or(DEFAULT_RETRIES_PER_CHUNK);
         let concurrency_level = concurrency_level as usize;
         let client = ctx.get_http_client();
-        let base_url = if let Some(ref peer) = peer {
+        let base_url = if let Some(peer) = peers.first() {
             peer
         } else {
             &self.base_url

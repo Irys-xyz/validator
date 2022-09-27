@@ -1,4 +1,6 @@
-table! {
+// @generated automatically by Diesel CLI.
+
+diesel::table! {
     bundle (id) {
         id -> Bpchar,
         owner_address -> Bpchar,
@@ -6,13 +8,13 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     leaders (address) {
         address -> Bpchar,
     }
 }
 
-table! {
+diesel::table! {
     transactions (id) {
         id -> Bpchar,
         epoch -> Bytea,
@@ -24,14 +26,19 @@ table! {
     }
 }
 
-table! {
+diesel::table! {
     validators (address) {
         address -> Bpchar,
         url -> Nullable<Varchar>,
     }
 }
 
-joinable!(leaders -> validators (address));
-joinable!(transactions -> bundle (bundle_id));
+diesel::joinable!(leaders -> validators (address));
+diesel::joinable!(transactions -> bundle (bundle_id));
 
-allow_tables_to_appear_in_same_query!(bundle, leaders, transactions, validators,);
+diesel::allow_tables_to_appear_in_same_query!(
+    bundle,
+    leaders,
+    transactions,
+    validators,
+);
