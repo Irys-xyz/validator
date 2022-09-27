@@ -87,7 +87,7 @@ async fn main() {
         .expect("Failed to set file size to match transaction data size");
 
     arweave
-        .download_transaction_data(&ctx, 16, &args.tx, &mut output, None, None)
+        .download_transaction_data(&ctx, 16, &args.tx, &mut output, vec![], None)
         .await
         .expect("Failed to download transaction data");
 
