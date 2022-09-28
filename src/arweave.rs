@@ -786,6 +786,31 @@ impl Arweave {
         }
     }
 
+    pub async fn download_transaction_data<Context, HttpClient, Output>(
+        &self,
+        ctx: &Context,
+        concurrency_level: u16,
+        tx: &TransactionId,
+        output: &mut Output,
+        peers: Vec<Url>,
+        retries_per_chunk: Option<u16>,
+        // concurrency_level: Option<u16>
+    ) -> Result<(), ArweaveError>
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+        Output: AsyncWrite + AsyncSeek + Unpin,
+    {
+        let retries_per_chunk = retries_per_chunk.unwrap_or(DEFAULT_RETRIES_PER_CHUNK);
+        let chunks_indexes = self.index_chunks(ctx, peers.first(), tx)
+            .await
+            .unwrap();
+
+        self.download_chunks(ctx, concurrency_level, chunks_indexes, output, retries_per_chunk)
+            .await
+    }
+
     async fn index_chunks<Context, HttpClient>(
         &self,
         ctx: &Context,
@@ -802,6 +827,8 @@ impl Arweave {
         } else {
             &self.base_url
         };
+
+        // TODO: get each chunk respective seeded node
         let url = base_url
             .join(&format!("/tx/{}/offset", &tx))
             .map_err(|err| {
@@ -852,30 +879,20 @@ impl Arweave {
         Ok(chunks_indexes)
     }
 
-    pub async fn download_transaction_data<Context, HttpClient, Output>(
+    async fn download_chunks<Context, HttpClient, Output>(
         &self,
         ctx: &Context,
         concurrency_level: u16,
-        tx: &TransactionId,
+        chunks_indexes: Vec<DataChunk>,
         output: &mut Output,
-        peers: Vec<Url>,
-        retries_per_chunk: Option<u16>,
-        // concurrency_level: Option<u16>
-    ) -> Result<(), ArweaveError>
+        retries_per_chunk: u16,
+    ) -> Result<(), ArweaveError> 
     where
         Context: ClientAccess<HttpClient>,
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
         HttpClient::Error: From<reqwest::Error>,
         Output: AsyncWrite + AsyncSeek + Unpin,
     {
-        let retries_per_chunk = retries_per_chunk.unwrap_or(DEFAULT_RETRIES_PER_CHUNK);
-        let concurrency_level  = concurrency_level as usize;
-        let client = ctx.get_http_client();
-        
-        let chunks_indexes = self.index_chunks(ctx, peers.first(), tx)
-            .await
-            .unwrap();
-
         let expected_chunk_amount = chunks_indexes.len();
         let chunks_indexes = DynamicSource::new(chunks_indexes);
         let busy_jobs = Arc::new(AtomicU16::new(0));
@@ -883,13 +900,19 @@ impl Arweave {
 
         pin_mut!(busy_jobs);
 
+        let client = ctx.get_http_client();
         let output = Arc::new(Mutex::new(output));
         let chunks = chunks_indexes
             .map(|chunk| { 
                 busy_jobs.fetch_add(1, Ordering::Relaxed);
                 async move {
-                    let url = self
-                    .base_url
+                    let base_url = if let Some(peer) = chunk.node.clone() {
+                        peer
+                    } else {
+                        self.base_url.clone()
+                    };
+
+                    let url = base_url
                         .join(&format!("/chunk/{}", chunk.seed_offset))
                         .map_err(|err| {
                             error!("Failed to build request Url: {:?}", err);
@@ -922,7 +945,7 @@ impl Arweave {
                     Some((chunk, res))
                 }
             })
-            .buffer_unordered(concurrency_level)
+            .buffer_unordered(concurrency_level.into())
             .map(|res| {
                 let notifier = notifier.clone();
                 let busy_jobs = busy_jobs.clone();
@@ -995,7 +1018,7 @@ impl Arweave {
                     fetched_chunk
                 }
             })
-            .buffer_unordered(concurrency_level)
+            .buffer_unordered(concurrency_level.into())
             .filter_map(|n| async {
                 if let Some(chunk) = n.clone() {
                     let mut mut_output = output.lock().expect("Failed to acquire lock");
@@ -1033,13 +1056,6 @@ impl Arweave {
             info!("{}/{} chunks fetched", chunks.len(), expected_chunk_amount);
             Ok(())
         }
-    }
-
-    async fn download_chunks<Context, HttpClient, Output>(
-        chunks_indexes: Vec<(u64, u64, u64, u64)>,
-
-    ) {
-        todo!();
     }
 
     pub async fn find_nodes<Context, HttpClient>(
