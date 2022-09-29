@@ -6,6 +6,7 @@ use http::header::CONTENT_LENGTH;
 use http::Uri;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::{self, Debug};
@@ -19,7 +20,7 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 use url::Url;
 
-use crate::consts::{CHUNK_SIZE, DEFAULT_RETRIES_PER_CHUNK};
+use crate::consts::{CHUNK_SIZE, DEFAULT_RETRIES_PER_CHUNK, CONFIRMATION_THRESHOLD};
 use crate::dynamic_source::DynamicSource;
 use crate::http::reqwest::execute_with_retry;
 use crate::http::{Client, ClientAccess, RetryAfter};
@@ -388,9 +389,9 @@ pub mod serde_stringify {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Offset {
     #[serde(with = "serde_stringify")]
-    offset: u64,
+    pub offset: u64,
     #[serde(with = "serde_stringify")]
-    size: u64,
+    pub size: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -410,7 +411,7 @@ struct DataChunk {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct Node(String);
+pub struct Node(pub String);
 
 impl Node {
     pub fn new(host_and_port: String) -> Self {
@@ -568,6 +569,7 @@ pub enum ArweaveError {
     RequestFailed,
     UnknownErr,
     MissingChunks,
+    NodeNotSynced
 }
 
 impl From<anyhow::Error> for ArweaveError {
@@ -594,10 +596,16 @@ where
     fn get_client(&self) -> &HttpClient;
 }
 
-struct TxStatus {
+#[derive(Clone, Debug, Deserialize)]
+pub struct TxStatus {
     block_height: u128,
     block_indep_hash: String,
     number_of_confirmations: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct SyncResponse<'a> {
+    data: &'a [u8]
 }
 
 impl Arweave {
@@ -836,7 +844,7 @@ impl Arweave {
         };
 
         // TODO: get each chunk respective seeded node
-        let Offset{ offset, size } = self.get_offset(ctx, &Node(base_url.to_string()), tx)
+        let Offset{ offset, size } = self.get_offset(ctx, base_url, tx)
             .await
             .expect("Could not get offset");
         info!("Transaction offset={}, size={}", offset, size);
@@ -1224,7 +1232,7 @@ impl Arweave {
     async fn get_offset<Context, HttpClient>(
         &self,
         ctx: &Context,
-        peer: &Node,
+        peer: &Url,
         tx_id: &TransactionId
     ) -> Result<Offset, ArweaveError> 
     where
@@ -1232,9 +1240,7 @@ impl Arweave {
         HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
         HttpClient::Error: From<reqwest::Error>,
     {
-        let base_url = Url::from_str(&peer.0)
-            .expect("Invalid url");
-        let url = base_url
+        let url = peer
             .join(&format!("/tx/{}/offset", &tx_id))
             .map_err(|err| {
                 error!("Failed to build request Url: {:?}", err);
@@ -1255,13 +1261,89 @@ impl Arweave {
             })
     }
 
-    async fn is_seeded<Context, HttpClient>(
+
+    async fn get_tx_sync_status<Context, HttpClient>(
         &self,
         ctx: &Context,
-        bundle_id: u64,
+        peer: &Url,
+        tx_id: &TransactionId
+    ) -> Result<bool, ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        //TODO: implement this check
+        Ok(true)
+    }
+
+    async fn get_tx_status<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: &Url,
+        tx_id: &TransactionId
+    ) -> Result<TxStatus, ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let url = peer
+            .join(&format!("/tx/{}/status", &tx_id))
+            .map_err(|err| {
+                error!("Failed to build request Url: {:?}", err);
+                ArweaveError::MalformedRequest
+            })
+            .expect("Could not join url");
+
+        let client = ctx.get_http_client();
+        let res: reqwest::Response = get(client, url, None).await?;
+        res.json()
+            .await
+            .map_err(|err| {
+                error!("Failed to parse response for offset data: {:?}", err);
+                ArweaveError::UnknownErr
+            })
+            .map(|op : TxStatus| {
+                op
+            })
+    }
+
+    pub async fn has_data<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: &Url,
+        tx: &TransactionId
+    ) -> Result<TxStatus, ArweaveError>
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let offset = self.get_offset(ctx, peer, tx)
+            .await
+            .expect("Could not get offset");
+        
+        let is_synced = self.get_tx_sync_status(ctx, peer, tx)
+            .await
+            .expect("Could not get tx sync status");
+            
+        if is_synced {
+            let status = self.get_tx_status(ctx, peer, tx)
+                .await
+                .expect("Could not get tx status");
+            Ok(status)
+        } else {
+           Err(ArweaveError::NodeNotSynced)
+        }
+    }
+
+
+    pub async fn is_seeded<Context, HttpClient>(
+        &self,
+        ctx: &Context,
         tx_id: TransactionId,
         threshold: u64,
-        check_indexed: bool,
         //TODO: put these args inside context
         concurrency_level: u16,
         timeout: Duration,
@@ -1287,16 +1369,43 @@ impl Arweave {
             .await
             .unwrap();
 
-        let mut seeded = Vec::<TxStatus>::new();
-        let mut seeded_peers = Vec::<String>::new();
-
+        let mut return_values = Vec::<TxStatus>::new();
+        let mut seeded_peers = Vec::<Node>::new();
         for peer in peers {
-            let Offset{ offset, size } = self.get_offset(ctx, &peer, &tx_id)
-                .await
-                .expect("Could not get offset");
+            let peer_url = match Url::from_str(&peer.0) {
+                Ok(url) => url,
+                Err(err) => {
+                    error!("Invalid url: {}", err);
+                    continue;
+                },
+            };
+
+            let has_data = self
+                .has_data(ctx, &peer_url, &tx_id)
+                .await;
+            if let Ok(status) = has_data {
+                //TODO: praise miner
+                seeded_peers.push(peer);
+                return_values.push(status);
+            }
         }
 
-        todo!()
+        if seeded_peers.len() < threshold as usize {
+            return Ok((false, seeded_peers));
+        }
+        let tx_stats = return_values
+            .first()
+            .expect("No first value present");
+        let network = self.get_network_info(ctx)
+            .await
+            .expect("Could not get network info");
+        
+        if network.height > tx_stats.block_height && tx_stats.number_of_confirmations >= CONFIRMATION_THRESHOLD {
+            //TODO: implement check_indexed on Bundlr logic
+            Ok((true, seeded_peers))
+        } else {
+            Ok((false, seeded_peers))
+        }
     }
 }
 

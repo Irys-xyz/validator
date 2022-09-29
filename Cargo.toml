@@ -81,3 +81,8 @@ path = "src/bin/download_transaction.rs"
 [[bin]]
 name = "crawl-peers"
 path = "src/bin/crawl_peers.rs"
+
+
+[[bin]]
+name = "check-seeded"
+path = "src/bin/check_seeded.rs"
