@@ -86,5 +86,9 @@ name = "crawl-peers"
 path = "src/bin/crawl_peers.rs"
 
 [[bin]]
+name = "check-seeded"
+path = "src/bin/check_seeded.rs"
+
+[[bin]]
 name = "bundle-tool"
 path = "src/bin/bundle_tool.rs"
