@@ -25,6 +25,7 @@ use crate::http::reqwest::execute_with_retry;
 use crate::http::{Client, ClientAccess, RetryAfter};
 use crate::key_manager::public_key_to_address;
 use crate::retry::{retry, RetryControl};
+use crate::server::RuntimeContext;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -593,6 +594,12 @@ where
     fn get_client(&self) -> &HttpClient;
 }
 
+struct TxStatus {
+    block_height: u128,
+    block_indep_hash: String,
+    number_of_confirmations: u64,
+}
+
 impl Arweave {
     pub fn new(url: Url) -> Arweave {
         Arweave { base_url: url }
@@ -829,20 +836,9 @@ impl Arweave {
         };
 
         // TODO: get each chunk respective seeded node
-        let url = base_url
-            .join(&format!("/tx/{}/offset", &tx))
-            .map_err(|err| {
-                error!("Failed to build request Url: {:?}", err);
-                ArweaveError::MalformedRequest
-            })?;
-
-        let client = ctx.get_http_client();
-        let res: reqwest::Response = get(client, url, None).await?;
-        let Offset { offset, size } = res.json().await.map_err(|err| {
-            error!("Failed to parse response for offset data: {:?}", err);
-            ArweaveError::UnknownErr
-        })?;
-
+        let Offset{ offset, size } = self.get_offset(ctx, &Node(base_url.to_string()), tx)
+            .await
+            .expect("Could not get offset");
         info!("Transaction offset={}, size={}", offset, size);
         let start_offset = offset - size + 1;
 
@@ -1223,6 +1219,84 @@ impl Arweave {
             acc.push(node);
             acc
         }))
+    }
+
+    async fn get_offset<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: &Node,
+        tx_id: &TransactionId
+    ) -> Result<Offset, ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let base_url = Url::from_str(&peer.0)
+            .expect("Invalid url");
+        let url = base_url
+            .join(&format!("/tx/{}/offset", &tx_id))
+            .map_err(|err| {
+                error!("Failed to build request Url: {:?}", err);
+                ArweaveError::MalformedRequest
+            })
+            .expect("Could not join url");
+
+        let client = ctx.get_http_client();
+        let res: reqwest::Response = get(client, url, None).await?;
+        res.json()
+            .await
+            .map_err(|err| {
+                error!("Failed to parse response for offset data: {:?}", err);
+                ArweaveError::UnknownErr
+            })
+            .map(|Offset { offset, size }| {
+                Offset { offset, size }
+            })
+    }
+
+    async fn is_seeded<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        bundle_id: u64,
+        tx_id: TransactionId,
+        threshold: u64,
+        check_indexed: bool,
+        //TODO: put these args inside context
+        concurrency_level: u16,
+        timeout: Duration,
+        max_depth: Option<usize>,
+        max_count: Option<usize>,
+    ) -> Result<(bool, Vec<Node>), ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>
+            + Send
+            + Sync
+            + Clone
+            + 'static,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let peers = self.find_nodes(
+                ctx,
+                concurrency_level,
+                timeout,
+                max_depth,
+                max_count,
+            )
+            .await
+            .unwrap();
+
+        let mut seeded = Vec::<TxStatus>::new();
+        let mut seeded_peers = Vec::<String>::new();
+
+        for peer in peers {
+            let Offset{ offset, size } = self.get_offset(ctx, &peer, &tx_id)
+                .await
+                .expect("Could not get offset");
+        }
+
+        todo!()
     }
 }
 
