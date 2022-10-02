@@ -31,11 +31,10 @@ impl FromStr for Range {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
-        let s = if s.starts_with("(") { &s[1..] } else { &s[..] };
-        let s = if s.ends_with(")") {
-            &s[..s.len() - 1]
+        let s = if let Some(stripped) = s.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+            stripped
         } else {
-            &s[..]
+            s
         };
         match s.split_once("..") {
             Some((start, end)) => {
@@ -128,7 +127,7 @@ impl Command {
                     .await
                     .expect("Failed to extract list of bundled transactions");
 
-                let tx_offset = match transactions.iter().find(|item| &item.id == &tx) {
+                let tx_offset = match transactions.iter().find(|item| item.id == tx) {
                     Some(tx) => tx,
                     None => panic!("Requested transaction is not contained in the bundle"),
                 };
@@ -157,7 +156,7 @@ impl Command {
 
                 let json = serde_json::to_string(&tx).expect("Failed to serialize tx metadata");
                 tx_metadata_file
-                    .write(json.as_bytes())
+                    .write_all(json.as_bytes())
                     .await
                     .expect("Failed to write metadata file");
 

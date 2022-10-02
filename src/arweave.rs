@@ -23,7 +23,7 @@ use crate::http::reqwest::execute_with_retry;
 use crate::http::{Client, ClientAccess};
 use crate::key_manager::public_key_to_address;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct Address(String);
 
@@ -69,7 +69,7 @@ impl TryFrom<&Owner> for Address {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct BlockHash(String);
 
@@ -85,7 +85,7 @@ impl fmt::Display for BlockHash {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct BlockHeight(u128);
 
@@ -101,7 +101,7 @@ impl PartialEq<u128> for BlockHeight {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct BlockIndepHash(String);
 
@@ -137,7 +137,7 @@ impl fmt::Display for BlockIndepHash {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct TransactionId(String);
 
@@ -173,7 +173,7 @@ impl fmt::Display for TransactionId {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct Owner(String);
 
@@ -204,7 +204,7 @@ pub mod tags {
     where
         S: Serializer,
     {
-        let s = data_encoding::BASE64URL.encode(&name.0.as_bytes());
+        let s = data_encoding::BASE64URL.encode(name.0.as_bytes());
         serializer.serialize_str(&s)
     }
 
@@ -218,7 +218,7 @@ pub mod tags {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct TagName(String);
 
@@ -240,7 +240,7 @@ impl From<&str> for TagName {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct TagValue(String);
 
@@ -262,7 +262,7 @@ impl From<&str> for TagValue {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Tag {
     name: TagName,
     value: TagValue,
@@ -289,7 +289,7 @@ impl PartialEq<Tag> for (&'static str, &'static str) {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct Signature(String);
 
@@ -305,7 +305,7 @@ impl fmt::Display for Signature {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(try_from = "String")]
 pub struct TransactionSize(usize);
 
@@ -317,9 +317,9 @@ impl FromStr for TransactionSize {
     }
 }
 
-impl Into<u64> for TransactionSize {
-    fn into(self) -> u64 {
-        self.0 as u64
+impl From<TransactionSize> for u64 {
+    fn from(v: TransactionSize) -> Self {
+        v.0 as u64
     }
 }
 
@@ -337,7 +337,7 @@ impl fmt::Display for TransactionSize {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NetworkInfo {
     pub network: String,
     pub version: usize,
@@ -350,7 +350,7 @@ pub struct NetworkInfo {
     pub node_state_latency: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockInfo {
     pub hash: BlockHash,
     pub height: BlockHeight,
@@ -360,7 +360,7 @@ pub struct BlockInfo {
     pub txs: Vec<TransactionId>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Transaction {
     pub id: TransactionId,
     pub last_tx: TransactionId,
@@ -394,7 +394,7 @@ pub mod serde_stringify {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Offset {
     #[serde(with = "serde_stringify")]
     offset: u64,
@@ -457,7 +457,7 @@ where
     HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
     HttpClient::Error: From<reqwest::Error>,
 {
-    let uri = Uri::from_str(&url.to_string()).map_err(|err| {
+    let uri = Uri::from_str(url.as_ref()).map_err(|err| {
         error!("Failed to translate Url to Uri: {:?}", err);
         ArweaveError::UnknownErr
     })?;
@@ -560,7 +560,7 @@ where
     .boxed()
 }
 
-#[derive(Debug, Display, Error, Clone, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, Error, PartialEq)]
 pub enum ArweaveError {
     MalformedRequest,
     RequestFailed,
@@ -610,7 +610,7 @@ impl Arweave {
             error!("Failed to build request Url: {:?}", err);
             ArweaveError::MalformedRequest
         })?;
-        let uri = Uri::from_str(&url.to_string()).map_err(|err| {
+        let uri = Uri::from_str(url.as_ref()).map_err(|err| {
             error!("Failed to translate Url to Uri: {:?}", err);
             ArweaveError::UnknownErr
         })?;
@@ -676,7 +676,7 @@ impl Arweave {
                 ArweaveError::MalformedRequest
             })?;
 
-        let uri = Uri::from_str(&url.to_string()).map_err(|err| {
+        let uri = Uri::from_str(url.as_ref()).map_err(|err| {
             error!("Failed to translate Url to Uri: {:?}", err);
             ArweaveError::UnknownErr
         })?;
@@ -739,7 +739,7 @@ impl Arweave {
                 ArweaveError::MalformedRequest
             })?;
 
-        let uri = Uri::from_str(&url.to_string()).map_err(|err| {
+        let uri = Uri::from_str(url.as_ref()).map_err(|err| {
             error!("Failed to translate Url to Uri: {:?}", err);
             ArweaveError::UnknownErr
         })?;
@@ -927,19 +927,16 @@ impl Arweave {
             }
         }?;
 
-        let unchecked_nodes: Vec<(Node, usize)> = get_peers(
-            http_client.clone(),
-            gateway_node.clone(),
-            Some(timeout.clone()),
-        )
-        .await
-        .map(|peers| peers.into_iter().map(|peer| (peer, 0)).collect())
-        .map_err(|err| match err {
-            FetchPeersError::HttpClientError(_) => ArweaveError::RequestFailed,
-            FetchPeersError::ArweaveError(err) => err,
-            FetchPeersError::UnsupportedPeerAddress(_) => ArweaveError::MalformedRequest,
-            FetchPeersError::ResponseDeserializationError => ArweaveError::UnknownErr,
-        })?;
+        let unchecked_nodes: Vec<(Node, usize)> =
+            get_peers(http_client.clone(), gateway_node.clone(), Some(timeout))
+                .await
+                .map(|peers| peers.into_iter().map(|peer| (peer, 0)).collect())
+                .map_err(|err| match err {
+                    FetchPeersError::HttpClientError(_) => ArweaveError::RequestFailed,
+                    FetchPeersError::ArweaveError(err) => err,
+                    FetchPeersError::UnsupportedPeerAddress(_) => ArweaveError::MalformedRequest,
+                    FetchPeersError::ResponseDeserializationError => ArweaveError::UnknownErr,
+                })?;
 
         {
             let mut cache = cache.lock().expect("Failed to acquire lock");
@@ -966,7 +963,7 @@ impl Arweave {
                 .map(|(node, depth)| {
                     busy_jobs.fetch_add(1, Ordering::Relaxed);
                     info!("Fetch peers for node={}, depth={}", node, depth,);
-                    get_peers(http_client.clone(), node.clone(), Some(timeout.clone()))
+                    get_peers(http_client.clone(), node.clone(), Some(timeout))
                         .map(move |res| (node, depth, res))
                 })
                 .buffer_unordered(concurrency_level)

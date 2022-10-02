@@ -42,7 +42,7 @@ impl ClientAccess<ReqwestClient> for Context {
 
 impl ArweaveContext<ReqwestClient> for Context {
     fn get_client(&self) -> &ReqwestClient {
-        &&self.http_client
+        &self.http_client
     }
 }
 
@@ -120,7 +120,7 @@ async fn main() {
         let mut txs = vec![];
         for tx_id in block_info.txs.iter() {
             let tx = arweave
-                .get_transaction_info(&ctx, &tx_id)
+                .get_transaction_info(&ctx, tx_id)
                 .await
                 .expect("Failed to fetch transaction info");
             txs.push(tx)

@@ -25,7 +25,7 @@ pub trait Client {
     fn execute(&self, req: Self::Request) -> BoxFuture<Result<Self::Response, Self::Error>>;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum RetryAfter {
     Timestamp(DateTime<Utc>),
     Duration(i64),

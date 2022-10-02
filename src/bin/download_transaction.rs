@@ -44,7 +44,7 @@ impl ClientAccess<ReqwestClient> for Context {
 
 impl ArweaveContext<ReqwestClient> for Context {
     fn get_client(&self) -> &ReqwestClient {
-        &&self.http_client
+        &self.http_client
     }
 }
 
@@ -100,7 +100,7 @@ async fn main() {
 
     let json = serde_json::to_string(&tx_metadata).expect("Failed to serialize tx metadata");
     metadata_file
-        .write(json.as_bytes())
+        .write_all(json.as_bytes())
         .await
         .expect("Failed to write metadata file");
 

@@ -21,7 +21,7 @@ use super::{
     tags,
 };
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct TransactionId(String);
 
@@ -188,10 +188,7 @@ where
     // Set read buffer to maximum size of data-less Bundlr transaction
     let mut bundle = BufReader::with_capacity(1024 * 4, bundle);
 
-    let sig_type = bundle
-        .read_u16_le()
-        .await
-        .map_err(|err| BundleError::IOError(err))?;
+    let sig_type = bundle.read_u16_le().await.map_err(BundleError::IOError)?;
 
     let Config {
         pub_length,
@@ -206,7 +203,7 @@ where
     bundle
         .read_exact(&mut buf)
         .await
-        .map_err(|err| BundleError::IOError(err))?;
+        .map_err(BundleError::IOError)?;
 
     let sig = BASE64URL_NOPAD.encode(&buf[..sig_length]);
     let pub_key = BASE64URL_NOPAD.encode(&buf[sig_length..]);
@@ -221,11 +218,11 @@ where
             bundle
                 .read_exact(&mut buf)
                 .await
-                .map_err(|err| BundleError::IOError(err))?;
+                .map_err(BundleError::IOError)?;
             let target = BASE64URL_NOPAD.encode(&buf);
             (Some(target), 32)
         }
-        val @ _ => return Err(BundleError::InvalidPresenceByte(val)),
+        val => return Err(BundleError::InvalidPresenceByte(val)),
     };
     let anchor_present = bundle.read_u8().await.map_err(BundleError::IOError)?;
     let (anchor, anchor_len) = match anchor_present {
@@ -234,22 +231,16 @@ where
             bundle
                 .read_exact(&mut buf)
                 .await
-                .map_err(|err| BundleError::IOError(err))?;
+                .map_err(BundleError::IOError)?;
             let anchor = BASE64URL_NOPAD.encode(&buf);
             (Some(anchor), 32)
         }
-        val @ _ => return Err(BundleError::InvalidPresenceByte(val)),
+        val => return Err(BundleError::InvalidPresenceByte(val)),
     };
 
-    let number_of_tags = bundle
-        .read_u64_le()
-        .await
-        .map_err(|err| BundleError::IOError(err))?;
+    let number_of_tags = bundle.read_u64_le().await.map_err(BundleError::IOError)?;
 
-    let number_of_tags_bytes = bundle
-        .read_u64_le()
-        .await
-        .map_err(|err| BundleError::IOError(err))?;
+    let number_of_tags_bytes = bundle.read_u64_le().await.map_err(BundleError::IOError)?;
 
     let tags = if number_of_tags_bytes > 0 {
         // Create temporary buffer that can hold tags data
@@ -257,7 +248,7 @@ where
         bundle
             .read_exact(&mut tag_bytes)
             .await
-            .map_err(|err| BundleError::IOError(err))?;
+            .map_err(BundleError::IOError)?;
 
         tag_bytes.as_mut_slice().decode().map_err(|err| {
             error!("Failed to decode tags: {:?}", err);

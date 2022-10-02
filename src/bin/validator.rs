@@ -152,7 +152,7 @@ impl IntoAsync<AppContext> for CliOpts {
     }
 }
 
-fn main() -> () {
+fn main() {
     actix_rt::System::new().block_on(async {
         let sys = System::new_all();
         System::print_hardware_info(&sys);

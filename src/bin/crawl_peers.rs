@@ -47,7 +47,7 @@ impl ClientAccess<ReqwestClient> for Context {
 
 impl ArweaveContext<ReqwestClient> for Context {
     fn get_client(&self) -> &ReqwestClient {
-        &&self.http_client
+        &self.http_client
     }
 }
 
