@@ -1,22 +1,19 @@
-use actix_web::{
-    web::Data,
-    HttpResponse,
-};
-use diesel::{QueryDsl, RunQueryDsl};
+use actix_web::{web::Data, HttpResponse};
 use diesel::dsl::count;
+use diesel::{QueryDsl, RunQueryDsl};
 use serde::Serialize;
 
 use crate::database::schema::transactions::{self, id};
-use crate::server::RuntimeContext;
-use crate::{server::error::ValidatorServerError, key_manager};
 use crate::server::routes::sign::Config;
+use crate::server::RuntimeContext;
+use crate::{key_manager, server::error::ValidatorServerError};
 
 #[derive(Serialize)]
 struct StatusBody {
     total_txs: i64,
     epoch: u128,
     next_epoch: u128,
-    previous_epoch: u128
+    previous_epoch: u128,
 }
 
 pub async fn status<Context, KeyManager>(
@@ -37,8 +34,8 @@ where
         total_txs,
         epoch: current_epoch,
         next_epoch: current_epoch + 1,
-        previous_epoch: current_epoch - 1
+        previous_epoch: current_epoch - 1,
     };
-    
+
     Ok(HttpResponse::Ok().json(body))
 }

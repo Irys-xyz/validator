@@ -18,8 +18,11 @@ use routes::index::index;
 use routes::status::status;
 
 use crate::{
-    database::queries::QueryContext, key_manager, server::routes::sign::sign_route,
-    state::ValidatorStateAccess, context::{BundlerAccess, ValidatorAddressAccess},
+    context::{BundlerAccess, ValidatorAddressAccess},
+    database::queries::QueryContext,
+    key_manager,
+    server::routes::sign::sign_route,
+    state::ValidatorStateAccess,
 };
 
 #[cfg(feature = "test-routes")]
@@ -61,7 +64,9 @@ where
                     web::scope("/cosigner")
                         .route("/sign", web::post().to(sign_route::<Context, KeyManager>)),
                 )
-                .service(web::scope("/idle").route("/", web::get().to(index::<Context, KeyManager>)));
+                .service(
+                    web::scope("/idle").route("/", web::get().to(index::<Context, KeyManager>)),
+                );
 
             #[cfg(feature = "test-routes")]
             let app = app
