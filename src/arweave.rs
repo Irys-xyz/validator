@@ -1350,11 +1350,7 @@ impl Arweave {
         ctx: &Context,
         tx_id: TransactionId,
         threshold: u64,
-        //TODO: put these args inside context
-        concurrency_level: u16,
-        timeout: Duration,
-        max_depth: Option<usize>,
-        max_count: Option<usize>,
+        peers: Vec<Node>,
     ) -> Result<(bool, Vec<Node>), ArweaveError> 
     where
         Context: ClientAccess<HttpClient>,
@@ -1365,16 +1361,6 @@ impl Arweave {
             + 'static,
         HttpClient::Error: From<reqwest::Error>,
     {
-        let peers = self.find_nodes(
-                ctx,
-                concurrency_level,
-                timeout,
-                max_depth,
-                max_count,
-            )
-            .await
-            .unwrap();
-
         let mut return_values = Vec::<TxStatus>::new();
         let mut seeded_peers = Vec::<Node>::new();
         for peer in peers {

@@ -64,15 +64,23 @@ async fn main() {
 
     let arweave = Arweave::new(args.arweave_gateway.clone());
     let ctx = Context::new(reqwest::Client::default());
+    let peers = arweave
+        .find_nodes(
+            &ctx,
+            args.max_concurrency,
+            Duration::from_secs(args.req_timeout_secs),
+            args.max_depth,
+            args.max_count,
+        )
+        .await
+        .expect("Failed to find nodes");
 
     let seeded = arweave.is_seeded(
         &ctx,
         args.tx,
         5,
-        args.max_concurrency,
-        Duration::from_secs(args.req_timeout_secs),
-        args.max_depth,
-        args.max_count)
+        peers,
+    )
         .await;
 
     info!("Seeded: {:?}", seeded);
