@@ -31,6 +31,8 @@ http = { version = "0.2.6", optional = true }
 httpdate = "1.0.2"
 jsonwebkey = "0.3.4"
 log = "0.4.17"
+num-bigint = { version = "0.4.3", features = ["serde"] }
+num-traits = "0.2.15"
 openssl = "0.10.40"
 reqwest = { version = "0.11.11", features = ["blocking", "json", "stream"], optional = true }
 serde = "1.0.132"
@@ -38,6 +40,7 @@ serde_json = "1.0.73"
 sysinfo = "0.24.5"
 thiserror = "1.0"
 tokio = { version = "1.19", features = ["full"] }
+tokio-stream = { version = "0.1.10", features = ["fs"] }
 url = { version = "2.2.2" }
 urlencoding = "2.1.0"
 
@@ -81,3 +84,7 @@ path = "src/bin/download_transaction.rs"
 [[bin]]
 name = "crawl-peers"
 path = "src/bin/crawl_peers.rs"
+
+[[bin]]
+name = "bundle-tool"
+path = "src/bin/bundle_tool.rs"

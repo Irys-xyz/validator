@@ -1,23 +1,15 @@
 extern crate diesel;
 
 use super::error::ValidatorCronError;
-use super::slasher::vote_slash;
-use super::transactions::get_transactions;
 use crate::arweave::{self, ArweaveContext};
 use crate::arweave::{Arweave, Transaction as ArweaveTx};
-use crate::bundler::Bundler;
+use crate::bundlr::bundler::Bundler;
 use crate::context::{ArweaveAccess, BundlerAccess};
-use crate::database::models::{Block, Epoch, NewBundle, NewTransaction};
-use crate::database::queries::{self, *};
+use crate::database::queries;
 use crate::http::{self, Client};
 use crate::key_manager;
 use crate::key_manager::KeyManagerAccess;
-use crate::types::Validator;
-use bundlr_sdk::deep_hash_sync::{deep_hash_sync, ONE_AS_BUFFER};
 use bundlr_sdk::verify::types::Item;
-use bundlr_sdk::{deep_hash::DeepHashChunk, verify::file::verify_file_bundle};
-use data_encoding::BASE64URL_NOPAD;
-use log::{error, info};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Debug)]

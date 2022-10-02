@@ -12,7 +12,7 @@ use sysinfo::{System, SystemExt};
 use url::Url;
 
 use validator::{
-    bundler::BundlerConfig,
+    bundlr::bundler::BundlerConfig,
     hardware::HardwareCheck,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig},

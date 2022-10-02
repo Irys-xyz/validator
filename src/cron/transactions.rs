@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{bundler::Bundler, http::Client};
+use crate::{bundlr::bundler::Bundler, http::Client};
 
 use super::error::TxsError;
 
@@ -113,7 +113,7 @@ where
 mod tests {
     use std::str::FromStr;
 
-    use crate::{bundler::Bundler, http::reqwest::mock::MockHttpClient};
+    use crate::{bundlr::bundler::Bundler, http::reqwest::mock::MockHttpClient};
     use http::Method;
     use reqwest::{Request, Response};
     use url::Url;

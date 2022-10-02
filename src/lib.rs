@@ -5,7 +5,7 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 pub mod arweave;
-pub mod bundler;
+pub mod bundlr;
 pub mod consts;
 pub mod context;
 pub mod contract_gateway;

@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::{
     arweave::{Arweave, ArweaveContext},
-    bundler::Bundler,
+    bundlr::bundler::Bundler,
     contract_gateway::ContractGateway,
     database::queries,
     http::reqwest::ReqwestClient,
@@ -198,7 +198,7 @@ pub mod test_utils {
     use super::AppContext;
     use crate::{
         arweave::Arweave,
-        bundler::Bundler,
+        bundlr::bundler::Bundler,
         contract_gateway::ContractGateway,
         http::reqwest::mock::MockHttpClient,
         key_manager::{InMemoryKeyManager, KeyManager},

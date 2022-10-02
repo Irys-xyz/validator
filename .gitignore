@@ -10,3 +10,6 @@ wallet*.json
 /db/validator.db
 .history
 .devcontainer
+
+# default cache folder for downloaded transactions
+/tx-cache
