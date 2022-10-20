@@ -26,6 +26,8 @@ pub enum CronJobError {
     ArweaveError(ArweaveError),
     ContractGatewayError(ContractGatewayError),
     ValidatorError(ValidatorCronError),
+    NetworkSyncError,
+    Other,
 }
 
 // Update contract state
@@ -38,12 +40,17 @@ where
         + contract_gateway::ContractGatewayAccess
         + http::ClientAccess<HttpClient>
         + key_manager::KeyManagerAccess<KeyManager>
-        + queries::QueryContext,
+        + queries::QueryContext
+        + Unpin,
     HttpClient: http::Client<
-        Request = reqwest::Request,
-        Response = reqwest::Response,
-        Error = reqwest::Error,
-    >,
+            Request = reqwest::Request,
+            Response = reqwest::Response,
+            Error = reqwest::Error,
+        > + Clone
+        + Send
+        + Sync
+        + 'static,
+    HttpClient::Error: Send,
     KeyManager: key_manager::KeyManager,
 {
     info!("Validator starting ...");
@@ -58,7 +65,7 @@ where
         // create_cron(&ctx, "validate bundler", validate::validate, 2 * 60),
         create_cron(
             &ctx,
-            "validate transactions",
+            "sync network info",
             validate::validate_transactions,
             30
         ),
@@ -71,15 +78,13 @@ where
     );
 }
 
-async fn create_cron<'a, Context, HttpClient, F>(
+async fn create_cron<'a, Context, F>(
     ctx: &'a Context,
     description: &str,
     f: impl Fn(&'a Context) -> F,
     sleep: u64,
 ) where
     F: Future<Output = Result<(), CronJobError>> + 'a,
-    HttpClient: http::Client,
-    Context: http::ClientAccess<HttpClient>,
 {
     loop {
         info!("Task running - {}", description);

@@ -1,82 +1,72 @@
-use futures::{pin_mut, Future};
-use log::{debug, error};
+use futures::stream::TryStreamExt;
+use futures::{Future, TryFutureExt};
+use log::error;
 
-use crate::arweave::{self, ArweaveError, BlockIndepHash, BlockInfo};
+use crate::arweave::visitor::arweave_visitor;
+use crate::arweave::{self, ArweaveError, BlockInfo};
 use crate::context;
 use crate::cron::CronJobError;
-use crate::http::Client;
 use crate::state::ValidatorStateAccess;
 
 pub type StorageError = ();
 
-async fn is_known_block<Context>(ctx: &Context, block_info: &BlockInfo) -> bool {
-    false
-}
-
-async fn store_block_info<Context>(
-    ctx: &Context,
-    block_info: BlockInfo,
-) -> Result<(), StorageError> {
-    Ok(())
-}
-
-async fn traverse_blockchain<Context, BlockHandler, BlockHandlerFuture, HttpClient>(
-    ctx: &Context,
-    start_block: BlockIndepHash,
-    block_handler: BlockHandler,
-) -> Result<(), CronJobError>
+fn is_new_block<Context>(
+    _ctx: &Context,
+    _block: &BlockInfo,
+) -> impl Future<Output = Result<bool, StorageError>>
 where
-    Context: context::ArweaveAccess + arweave::ArweaveContext<HttpClient>,
-    BlockHandler: Fn(&Context, usize, BlockInfo) -> BlockHandlerFuture,
-    BlockHandlerFuture: Future<Output = bool>,
-    HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
-    HttpClient::Error: From<reqwest::Error>,
+    Context: Unpin,
 {
-    let arweave = ctx.arweave();
+    futures::future::ready(Ok(true))
+}
 
-    let mut block = start_block;
-    let mut depth = 0;
-
-    loop {
-        let block_info = arweave
-            .get_block_info(ctx, &block)
-            .await
-            .map_err(|err| CronJobError::ArweaveError(err))?;
-
-        block = block_info.previous_block.clone();
-
-        if !block_handler(ctx, depth, block_info).await {
-            break;
-        }
-
-        depth += 1;
-    }
-
-    return Ok(());
+fn process_new_block<Context>(
+    _ctx: &Context,
+    _block_info: BlockInfo,
+) -> impl Future<Output = Result<(), StorageError>>
+where
+    Context: Unpin,
+{
+    futures::future::ready(Ok(()))
 }
 
 pub async fn sync_network_info<Context, HttpClient>(ctx: &Context) -> Result<(), CronJobError>
 where
-    Context: arweave::ArweaveContext<HttpClient> + context::ArweaveAccess + ValidatorStateAccess,
-    HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
-    HttpClient::Error: From<reqwest::Error>,
+    Context:
+        arweave::ArweaveContext<HttpClient> + context::ArweaveAccess + ValidatorStateAccess + Unpin,
+    HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    HttpClient::Error: From<reqwest::Error> + Send,
 {
     let network_info = ctx.arweave().get_network_info(ctx).await.map_err(|err| {
         error!("Request for network info failed: {:?}", err);
         CronJobError::ArweaveError(ArweaveError::UnknownErr)
     })?;
 
-    let state = ctx.get_validator_state();
+    let visitor = arweave_visitor(ctx, network_info.current);
 
-    let head = network_info.current;
-
-    traverse_blockchain(ctx, head, |ctx, depth, block| async move {
-        debug!(
-            "Blockchain traversal, depth={}, block: height={}, id={}",
-            depth, block.height, block.indep_hash
-        );
-        depth < 10
-    });
-
-    Ok(())
+    visitor
+        .map_err(|err| {
+            error!("Failed to get next block: {:?}", err);
+            CronJobError::NetworkSyncError
+        })
+        .try_take_while(|block| {
+            is_new_block(&ctx, &block).map_err(|err| {
+                error!("Check if block is new failed: {:?}", err);
+                CronJobError::NetworkSyncError
+            })
+        })
+        .try_for_each(|block| {
+            process_new_block(ctx, block).map_err(|err| {
+                error!("Request for network info failed: {:?}", err);
+                CronJobError::NetworkSyncError
+            })
+        })
+        .await
 }
+
+#[cfg(test)]
+mod tests {}

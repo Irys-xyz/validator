@@ -23,6 +23,181 @@ use crate::http::reqwest::execute_with_retry;
 use crate::http::{Client, ClientAccess};
 use crate::key_manager::public_key_to_address;
 
+pub mod visitor {
+    use futures::stream;
+
+    use crate::context;
+
+    use super::{ArweaveError, BlockIndepHash, BlockInfo};
+
+    pub fn arweave_visitor<Context, HttpClient>(
+        ctx: &Context,
+        start: BlockIndepHash,
+    ) -> impl stream::Stream<Item = Result<BlockInfo, ArweaveError>> + '_
+    where
+        Context: super::ArweaveContext<HttpClient> + context::ArweaveAccess + Unpin,
+        HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        HttpClient::Error: From<reqwest::Error> + Send,
+    {
+        stream::unfold((Some(start), ctx), |(next, ctx)| async move {
+            match next {
+                Some(block_id) => match ctx.arweave().get_block_info(ctx, &block_id).await {
+                    Ok(block) => {
+                        let next = block.previous_block.clone();
+                        Some((Ok(block), (Some(next), ctx)))
+                    }
+                    err => Some((err, (None, ctx))),
+                },
+                None => None,
+            }
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::{fs, str::FromStr};
+
+        use futures::{pin_mut, stream::StreamExt};
+        use reqwest::{Request, Response, Url};
+
+        use crate::{
+            arweave::{visitor::arweave_visitor, Arweave, ArweaveContext},
+            context::ArweaveAccess,
+            http::{reqwest::mock::MockHttpClient, ClientAccess},
+        };
+
+        #[derive(Clone)]
+        struct Context {
+            arweave: Arweave,
+            http_client: MockHttpClient,
+        }
+
+        impl Context {
+            pub fn new(arweave: Arweave, http_client: MockHttpClient) -> Self {
+                Context {
+                    http_client,
+                    arweave,
+                }
+            }
+        }
+
+        impl ClientAccess<MockHttpClient> for Context {
+            fn get_http_client(&self) -> &MockHttpClient {
+                &self.http_client
+            }
+        }
+
+        impl ArweaveContext<MockHttpClient> for Context {
+            fn get_client(&self) -> &MockHttpClient {
+                &self.http_client
+            }
+        }
+
+        impl ArweaveAccess for Context {
+            fn arweave(&self) -> &Arweave {
+                &self.arweave
+            }
+        }
+
+        #[tokio::test]
+        async fn stream_blocks_with_arweave_visitor() {
+            let http_client = {
+                MockHttpClient::new(|a: &Request, b: &Request| a.url() == b.url())
+                    .when(|req: &Request| {
+                        req.url().as_str() == "http://example.com/info"
+                    })
+                    .then(|_: &Request| {
+                        let data = "{\"network\":\"arweave.N.1\",\"version\":5,\"release\":53,\"height\":1039304,\"current\":\"NoD90XIXNVUvFVUW66EvJyjYelwrw7QM94HQ5MnvVwOODxgVtGqfwZgYBcw7Okv6\",\"blocks\":1039305,\"peers\":5077,\"queue_length\":0,\"node_state_latency\":1}";
+                        let response = http::response::Builder::new()
+                            .status(200)
+                            .body(data)
+                            .unwrap();
+                        Response::from(response)
+                    })
+                    .when(move |req: &Request| {
+                        req.url().as_str().ends_with(
+                            "NoD90XIXNVUvFVUW66EvJyjYelwrw7QM94HQ5MnvVwOODxgVtGqfwZgYBcw7Okv6",
+                        )
+                    })
+                    .then(move |_| {
+                        let data = fs::read_to_string("./test-data/block_NoD90XIXNVUvFVUW66EvJyjYelwrw7QM94HQ5MnvVwOODxgVtGqfwZgYBcw7Okv6.json").expect("Failed to read test data");
+                        let response = http::response::Builder::new()
+                            .status(200)
+                            .body(data)
+                            .unwrap();
+                        Response::from(response)
+                    })
+                    .when(move |req: &Request| {
+                        req.url().as_str().ends_with(
+                            "Tn5fr-RL1L5PfXeWTrH7umebRx8RCChbSrBdB-Q5E3vJt8jgP6UnayltOyv2Zo-w",
+                        )
+                    })
+                    .then(move |_| {
+                        let data = fs::read_to_string("./test-data/block_Tn5fr-RL1L5PfXeWTrH7umebRx8RCChbSrBdB-Q5E3vJt8jgP6UnayltOyv2Zo-w.json").expect("Failed to read test data");
+                        let response = http::response::Builder::new()
+                            .status(200)
+                            .body(data)
+                            .unwrap();
+                        Response::from(response)
+                    })
+                    .when(move |req: &Request| {
+                        req.url().as_str().ends_with(
+                            "nbu76VJa4p-Y7HXp8OKALSQpHinRne-LJVPH9rpUHjxKCKi3y5XJisUlAtE3IBET",
+                        )
+                    })
+                    .then(move |_| {
+                        let data = fs::read_to_string("./test-data/block_nbu76VJa4p-Y7HXp8OKALSQpHinRne-LJVPH9rpUHjxKCKi3y5XJisUlAtE3IBET.json").expect("Failed to read test data");
+                        let response = http::response::Builder::new()
+                            .status(200)
+                            .body(data)
+                            .unwrap();
+                        Response::from(response)
+                    })
+            };
+
+            let arweave = Arweave::new(Url::from_str("http://example.com").unwrap());
+            let ctx = Context::new(arweave, http_client);
+
+            let current_head = ctx.arweave().get_network_info(&ctx).await.unwrap().current;
+
+            let visitor = arweave_visitor(&ctx, current_head);
+            pin_mut!(visitor);
+
+            assert_eq!(
+                visitor
+                    .next()
+                    .await
+                    .expect("Expected to find next block, but got none")
+                    .expect("Request for the block resulted with an error")
+                    .indep_hash,
+                "NoD90XIXNVUvFVUW66EvJyjYelwrw7QM94HQ5MnvVwOODxgVtGqfwZgYBcw7Okv6"
+            );
+            assert_eq!(
+                visitor
+                    .next()
+                    .await
+                    .expect("Expected to find next block, but got none")
+                    .expect("Request for the block resulted with an error")
+                    .indep_hash,
+                "Tn5fr-RL1L5PfXeWTrH7umebRx8RCChbSrBdB-Q5E3vJt8jgP6UnayltOyv2Zo-w"
+            );
+            assert_eq!(
+                visitor
+                    .next()
+                    .await
+                    .expect("Expected to find next block, but got none")
+                    .expect("Request for the block resulted with an error")
+                    .indep_hash,
+                "nbu76VJa4p-Y7HXp8OKALSQpHinRne-LJVPH9rpUHjxKCKi3y5XJisUlAtE3IBET"
+            );
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct Address(String);
@@ -134,6 +309,13 @@ impl From<String> for BlockIndepHash {
 impl fmt::Display for BlockIndepHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(test)]
+impl PartialEq<&str> for BlockIndepHash {
+    fn eq(&self, other: &&str) -> bool {
+        &self.0 == other
     }
 }
 
