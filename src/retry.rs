@@ -123,9 +123,7 @@ where
                         RetryBackoffStrategy::Exponential(base) => {
                             // TODO: we should probably add some random time here
                             Runtime::sleep(Duration::seconds(
-                                base.num_seconds()
-                                    .saturating_mul(2u8.pow(i.into()).into())
-                                    .into(),
+                                base.num_seconds().saturating_mul(2u8.pow(i.into()).into()),
                             ))
                             .await
                         }
@@ -135,7 +133,7 @@ where
             }
         }
 
-        return (self.failure_handler)(final_value.take().unwrap(), true);
+        (self.failure_handler)(final_value.take().unwrap(), true)
     }
 
     pub async fn run<Fut, F>(self, payload: F) -> R
@@ -162,9 +160,7 @@ where
                         RetryBackoffStrategy::Exponential(base) => {
                             // TODO: we should probably add some random time here
                             Runtime::sleep(Duration::seconds(
-                                base.num_seconds()
-                                    .saturating_mul(2u8.pow(i.into()).into())
-                                    .into(),
+                                base.num_seconds().saturating_mul(2u8.pow(i.into()).into()),
                             ))
                             .await
                         }
@@ -173,7 +169,7 @@ where
                 }
             }
         }
-        return (self.failure_handler)(final_value.take().unwrap(), true);
+        (self.failure_handler)(final_value.take().unwrap(), true)
     }
 }
 
@@ -234,6 +230,26 @@ mod tests {
         fn sleep(_: Duration) -> Self::Sleep {
             MockSleep
         }
+    }
+
+    #[tokio::test]
+    async fn retry_with_tokio_runtime() {
+        let res: Result<(), ()> = retry::<tokio::runtime::Handle, _>()
+            .max_retries(5)
+            .run(|| async move { RetryControl::Success(Ok(())) })
+            .await;
+
+        assert_eq!(res, Ok(()));
+    }
+
+    #[actix_rt::test]
+    async fn retry_with_actix_runtime() {
+        let res: Result<(), ()> = retry::<actix_rt::Runtime, _>()
+            .max_retries(5)
+            .run(|| async move { RetryControl::Success(Ok(())) })
+            .await;
+
+        assert_eq!(res, Ok(()));
     }
 
     #[test]

@@ -1,14 +1,15 @@
+use crate::arweave::ArweaveContext;
 use crate::database::queries;
 use crate::state::ValidatorRole;
 use crate::{context, http, key_manager};
 
 use super::bundle::validate_bundler;
-use super::{arweave, CronJobError};
+use super::CronJobError;
 
 pub async fn validate<Context, HttpClient, KeyManager>(ctx: &Context) -> Result<(), CronJobError>
 where
     Context: queries::QueryContext
-        + arweave::ArweaveContext<HttpClient>
+        + ArweaveContext<HttpClient>
         + context::ArweaveAccess
         + context::BundlerAccess
         + http::ClientAccess<HttpClient>

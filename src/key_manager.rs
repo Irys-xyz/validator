@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{convert::Infallible, ops::Deref};
 
 use data_encoding::BASE64URL_NOPAD;
 use jsonwebkey::JsonWebKey;
@@ -9,6 +9,17 @@ use openssl::{
     sha::Sha256,
     sign,
 };
+
+use crate::arweave::Address;
+
+pub fn public_key_to_address(n: &[u8]) -> Result<Address, Infallible> {
+    let n = BASE64URL_NOPAD.decode(n).unwrap();
+    let mut hasher = Sha256::new();
+    hasher.update(&n);
+    let hash = hasher.finish();
+    let address = BASE64URL_NOPAD.encode(&hash);
+    address.parse()
+}
 
 pub trait KeyManagerAccess<KeyManager>
 where
@@ -272,6 +283,9 @@ mod tests {
     use openssl::rsa::Padding;
     use openssl::sign::{Signer, Verifier};
 
+    use crate::arweave::Address;
+
+    use super::public_key_to_address;
     use super::test_utils::{
         bundler_key, to_address, to_private_key, to_public_key, validator_key,
     };
@@ -361,5 +375,17 @@ mod tests {
         verifier.set_rsa_padding(Padding::PKCS1_PSS).unwrap();
         verifier.update(data).unwrap();
         assert!(verifier.verify(&signature).unwrap());
+    }
+
+    #[test]
+    fn test_public_key_to_address() {
+        let expected: Address = "OXcT1sVRSA5eGwt2k6Yuz8-3e3g9WJi5uSE99CWqsBs"
+            .parse()
+            .unwrap();
+
+        let key = "sq9JbppKLlAKtQwalfX5DagnGMlTirditXk7y4jgoeA7DEM0Z6cVPE5xMQ9kz_T9VppP6BFHtHyZCZODercEVWipzkr36tfQkR5EDGUQyLivdxUzbWgVkzw7D27PJEa4cd1Uy6r18rYLqERgbRvAZph5YJZmpSJk7r3MwnQquuktjvSpfCLFwSxP1w879-ss_JalM9ICzRi38henONio8gll6GV9-omrWwRMZer_15bspCK5txCwpY137nfKwKD5YBAuzxxcj424M7zlSHlsafBwaRwFbf8gHtW03iJER4lR4GxeY0WvnYaB3KDISHQp53a9nlbmiWO5WcHHYsR83OT2eJ0Pl3RWA-_imk_SNwGQTCjmA6tf_UVwL8HzYS2iyuu85b7iYK9ZQoh8nqbNC6qibICE4h9Fe3bN7AgitIe9XzCTOXDfMr4ahjC8kkqJ1z4zNAI6-Leei_Mgd8JtZh2vqFNZhXK0lSadFl_9Oh3AET7tUds2E7s-6zpRPd9oBZu6-kNuHDRJ6TQhZSwJ9ZO5HYsccb_G_1so72aXJymR9ggJgWr4J3bawAYYnqmvmzGklYOlE_5HVnMxf-UxpT7ztdsHbc9QEH6W2bzwxbpjTczEZs3JCCB3c-NewNHsj9PYM3b5tTlTNP9kNAwPZHWpt11t79LuNkNGt9LfOek";
+        let actual = public_key_to_address(key.as_bytes()).unwrap();
+
+        assert_eq!(actual, expected);
     }
 }

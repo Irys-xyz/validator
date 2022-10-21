@@ -1,11 +1,8 @@
-use actix_web::{
-    web::Data,
-    HttpResponse,
-};
+use actix_web::{web::Data, HttpResponse};
 use serde::Serialize;
 
-use crate::{server::error::ValidatorServerError, key_manager};
 use crate::server::routes::sign::Config;
+use crate::{key_manager, server::error::ValidatorServerError};
 
 #[derive(Serialize)]
 struct IndexBody<'a> {
@@ -30,6 +27,6 @@ where
         block_height: ctx.current_block(),
         epoch: ctx.current_epoch(),
     };
-    
+
     Ok(HttpResponse::Ok().json(body))
 }

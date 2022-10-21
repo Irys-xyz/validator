@@ -1,11 +1,12 @@
 use std::str::FromStr;
 
 use crate::{
+    arweave::ArweaveError,
     context, contract_gateway,
     state::{self, ValidatorRole},
 };
 
-use super::{arweave::ArweaveError, http, CronJobError};
+use super::{http, CronJobError};
 
 use bundlr_contracts_validators::{
     slashing::Proposal as SlashProposal,

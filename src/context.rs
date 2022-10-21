@@ -8,9 +8,9 @@ use jsonwebkey::JsonWebKey;
 use url::Url;
 
 use crate::{
-    bundler::Bundler,
+    arweave::{Arweave, ArweaveContext},
+    bundlr::bundler::Bundler,
     contract_gateway::ContractGateway,
-    cron::arweave::{Arweave, ArweaveContext},
     database::queries,
     http::reqwest::ReqwestClient,
     key_manager::{InMemoryKeyManager, InMemoryKeyManagerConfig, KeyManager, KeyManagerAccess},
@@ -70,9 +70,7 @@ impl AppContext {
             url: bundler_url.clone(),
         };
 
-        let arweave_client = Arweave {
-            url: arweave_url.clone(),
-        };
+        let arweave_client = Arweave::new(arweave_url.clone());
 
         let contract_gateway = ContractGateway {
             url: contract_gateway_url.clone(),
@@ -199,9 +197,9 @@ pub mod test_utils {
 
     use super::AppContext;
     use crate::{
-        bundler::Bundler,
+        arweave::Arweave,
+        bundlr::bundler::Bundler,
         contract_gateway::ContractGateway,
-        cron::arweave::Arweave,
         http::reqwest::mock::MockHttpClient,
         key_manager::{InMemoryKeyManager, KeyManager},
         state::generate_state,
@@ -224,14 +222,12 @@ pub mod test_utils {
 
         let state = generate_state();
 
-        let bundler_connection = Bundler {
-            address: key_manager.bundler_address().to_owned(),
-            url: Url::from_str("http://bundler.example.com").unwrap(),
-        };
+        let bundler_connection = Bundler::new(
+            key_manager.bundler_address().to_owned(),
+            Url::from_str("http://bundler.example.com").unwrap(),
+        );
 
-        let arweave_client = Arweave {
-            url: Url::from_str("http://example.com").unwrap(),
-        };
+        let arweave_client = Arweave::new(Url::from_str("http://example.com").unwrap());
 
         let contract_gateway = ContractGateway {
             url: Url::from_str("http://localhost:3000").unwrap(),
@@ -261,14 +257,12 @@ pub mod test_utils {
 
         let state = generate_state();
 
-        let bundler_connection = Bundler {
-            address: key_manager.bundler_address().to_owned(),
-            url: Url::from_str("http://bundler.example.com").unwrap(),
-        };
+        let bundler_connection = Bundler::new(
+            key_manager.bundler_address().to_owned(),
+            Url::from_str("http://bundler.example.com").unwrap(),
+        );
 
-        let arweave_client = Arweave {
-            url: Url::from_str("http://example.com").unwrap(),
-        };
+        let arweave_client = Arweave::new(Url::from_str("http://example.com").unwrap());
 
         let contract_gateway = ContractGateway {
             url: Url::from_str("http://localhost:3000").unwrap(),

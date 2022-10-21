@@ -1,4 +1,4 @@
-use crate::http::Client;
+use crate::{arweave, http::Client};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use url::Url;
@@ -19,6 +19,10 @@ pub struct Bundler {
 impl Bundler {
     pub fn new(address: String, url: Url) -> Self {
         Bundler { address, url }
+    }
+
+    pub fn is_bundler_transaction(&self, tx: &arweave::Transaction) -> bool {
+        tx.owner == self.address.as_str()
     }
 }
 
@@ -52,6 +56,7 @@ impl BundlerConfig {
         body.unwrap()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

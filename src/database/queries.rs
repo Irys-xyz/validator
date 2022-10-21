@@ -83,7 +83,11 @@ where
         .first::<Transaction>(&conn)
 }
 
-pub async fn filter<Context>(ctx: &Context, current_epoch: u128, epoch_amount: u128) -> Result<usize, Error>
+pub async fn filter<Context>(
+    ctx: &Context,
+    current_epoch: u128,
+    epoch_amount: u128,
+) -> Result<usize, Error>
 where
     Context: QueryContext,
 {
@@ -93,6 +97,5 @@ where
     let txs = transactions
         .filter(transactions::epoch.lt(last_epoch))
         .filter(transactions::validated.eq(true));
-    diesel::delete(txs)
-        .execute(&conn)
+    diesel::delete(txs).execute(&conn)
 }

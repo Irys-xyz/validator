@@ -7,12 +7,8 @@ pub fn get_file_as_byte_vector(filename: &str) -> Result<Vec<u8>, Error> {
     let mut f = File::open(&filename).expect("no file found");
     let metadata = fs::metadata(&filename).expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
-    let res = f.read(&mut buffer);
-    if let Err(err) = res {
-        Err(err)
-    } else {
-        Ok(buffer)
-    }
+    f.read_exact(&mut buffer)?;
+    Ok(buffer)
 }
 
 #[cfg(test)]
