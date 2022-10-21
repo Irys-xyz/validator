@@ -19,6 +19,7 @@ use std::str::FromStr;
 use url::Url;
 
 use crate::dynamic_async_queue::DynamicAsyncQueue;
+use crate::consts::{CHUNK_SIZE, DEFAULT_RETRIES_PER_CHUNK, CONFIRMATION_THRESHOLD};
 use crate::http::reqwest::execute_with_retry;
 use crate::http::{Client, ClientAccess};
 use crate::key_manager::public_key_to_address;
@@ -579,9 +580,9 @@ pub mod serde_stringify {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Offset {
     #[serde(with = "serde_stringify")]
-    offset: u64,
+    pub offset: u64,
     #[serde(with = "serde_stringify")]
-    size: u64,
+    pub size: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -589,8 +590,19 @@ struct Chunk<'a> {
     chunk: &'a [u8],
 }
 
+#[derive(Clone, Debug, Deserialize)]
+
+struct DataChunk {
+    i: u64,
+    seed_offset: u64,
+    file_offset: u64,
+    size: u64,
+    node: Option<Url>,
+    chunk: Vec<u8>
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct Node(String);
+pub struct Node(pub String);
 
 impl Node {
     pub fn new(host_and_port: String) -> Self {
@@ -747,6 +759,8 @@ pub enum ArweaveError {
     MalformedRequest,
     RequestFailed,
     UnknownErr,
+    MissingChunks,
+    NodeNotSynced
 }
 
 impl From<anyhow::Error> for ArweaveError {
@@ -771,6 +785,18 @@ where
     HttpClient: crate::http::Client<Request = reqwest::Request, Response = reqwest::Response>,
 {
     fn get_client(&self) -> &HttpClient;
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct TxStatus {
+    block_height: u128,
+    block_indep_hash: String,
+    number_of_confirmations: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct SyncResponse<'a> {
+    data: &'a [u8]
 }
 
 impl Arweave {
@@ -969,9 +995,12 @@ impl Arweave {
     pub async fn download_transaction_data<Context, HttpClient, Output>(
         &self,
         ctx: &Context,
+        concurrency_level: u16,
         tx: &TransactionId,
         output: &mut Output,
-        peer: Option<Url>,
+        peers: Vec<Url>,
+        retries_per_chunk: Option<u16>,
+        // concurrency_level: Option<u16>
     ) -> Result<(), ArweaveError>
     where
         Context: ClientAccess<HttpClient>,
@@ -979,95 +1008,249 @@ impl Arweave {
         HttpClient::Error: From<reqwest::Error>,
         Output: AsyncWrite + AsyncSeek + Unpin,
     {
-        let client = ctx.get_http_client();
-        let base_url = if let Some(ref peer) = peer {
+        let retries_per_chunk = retries_per_chunk.unwrap_or(DEFAULT_RETRIES_PER_CHUNK);
+        let chunks_indexes = self.index_chunks(ctx, peers.first(), tx)
+            .await
+            .unwrap();
+
+        self.download_chunks(ctx, concurrency_level, chunks_indexes, output, retries_per_chunk)
+            .await
+    }
+
+    async fn index_chunks<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: Option<&Url>,
+        tx: &TransactionId,
+    ) -> Result<Vec<DataChunk>, ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let base_url = if let Some(peer) = peer {
             peer
         } else {
             &self.base_url
         };
-        let url = base_url
-            .join(&format!("/tx/{}/offset", &tx))
-            .map_err(|err| {
-                error!("Failed to build request Url: {:?}", err);
-                ArweaveError::MalformedRequest
-            })?;
-        let res: reqwest::Response = get(client, url, None).await?;
-        let Offset { offset, size } = res.json().await.map_err(|err| {
-            error!("Failed to parse response for offset data: {:?}", err);
-            ArweaveError::UnknownErr
-        })?;
 
+        // TODO: get each chunk respective seeded node
+        let Offset{ offset, size } = self.get_offset(ctx, base_url, tx)
+            .await
+            .expect("Could not get offset");
         info!("Transaction offset={}, size={}", offset, size);
-
-        let end_offset = offset;
         let start_offset = offset - size + 1;
-        let mut chunk_offset = start_offset;
-        while chunk_offset < end_offset + 1 {
-            let url = self
-                .base_url
-                .join(&format!("/chunk/{}", &chunk_offset))
-                .map_err(|err| {
-                    error!("Failed to build request Url: {:?}", err);
-                    ArweaveError::MalformedRequest
-                })?;
 
-            let mut res = get(client, url, None).await?;
+        let mut file_offset = 0;
+        let mut chunks_indexes = Vec::<DataChunk>::new();
+        let mut i = 0;
 
-            let content_length: u64 = res
-                .headers()
-                .get(CONTENT_LENGTH)
-                .and_then(|h| h.to_str().ok())
-                .and_then(|s| s.parse::<u64>().ok())
-                .ok_or_else(|| {
-                    error!("Could not read chunk size, missing Content-Length header");
-                    ArweaveError::RequestFailed
-                })?;
-
-            let file_offset = chunk_offset - start_offset;
-
-            // This is not strictly needed at the moment, but keeping as
-            // an example, because this will be needed once we add retry
-            // and concurrency
-            output
-                .seek(std::io::SeekFrom::Start(file_offset))
-                .await
-                .map_err(|err| {
-                    error!(
-                        "Failed to seek into the right position in the output: {:?}",
-                        err
-                    );
-                    ArweaveError::RequestFailed
-                })?;
-
-            let mut buf = Vec::with_capacity(content_length as usize);
-            while let Some(chunk) = res.chunk().await.map_err(|err| {
-                error!("Failed to read chunk data: {:?}", err);
-                ArweaveError::RequestFailed
-            })? {
-                buf.write_all(&chunk).await.map_err(|err| {
-                    error!("Failed to write chunk data to output: {:?}", err);
-                    ArweaveError::RequestFailed
-                })?;
-            }
-            let chunk: Chunk = serde_json::from_slice(buf.as_slice()).unwrap();
-            let data = BASE64URL_NOPAD.decode(chunk.chunk).unwrap();
-
-            output.write_all(data.as_slice()).await.map_err(|err| {
-                error!("Failed to write chunk data: {:?}", err);
-                ArweaveError::UnknownErr
-            })?;
-
-            let chunk_size = data.len() as u64;
-
-            info!(
-                "Got chunk: offset={}, chunk_size={}",
-                chunk_offset, chunk_size
-            );
-
-            chunk_offset += chunk_size;
+        while file_offset < size + 1 && file_offset + CHUNK_SIZE < size {
+            let chunk = DataChunk
+                { 
+                    i, 
+                    seed_offset: start_offset + file_offset, 
+                    file_offset, 
+                    size: CHUNK_SIZE,
+                    node: None,
+                    chunk: vec![]
+                };
+                info!("Expecting {:?}", &chunk);
+            chunks_indexes.push(chunk);
+            file_offset += CHUNK_SIZE;
+            i+=1;
         }
+        let chunk = DataChunk
+            { 
+                i, 
+                seed_offset: start_offset + file_offset, 
+                file_offset, 
+                size: size % CHUNK_SIZE,
+                node: None,
+                chunk: vec![]
+            };
+        info!("Expecting {:?}", &chunk);
+        chunks_indexes.push(chunk);
+        Ok(chunks_indexes)
+    }
 
-        Ok(())
+    async fn download_chunks<Context, HttpClient, Output>(
+        &self,
+        ctx: &Context,
+        concurrency_level: u16,
+        chunks_indexes: Vec<DataChunk>,
+        output: &mut Output,
+        retries_per_chunk: u16,
+    ) -> Result<(), ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+        Output: AsyncWrite + AsyncSeek + Unpin,
+    {
+        let expected_chunk_amount = chunks_indexes.len();
+        let chunks_indexes = DynamicAsyncQueue::new(chunks_indexes);
+        let busy_jobs = Arc::new(AtomicU16::new(0));
+        let notifier = chunks_indexes.clone();
+
+        pin_mut!(busy_jobs);
+
+        let client = ctx.get_http_client();
+        let output = Arc::new(Mutex::new(output));
+        let chunks = chunks_indexes
+            .map(|chunk| { 
+                busy_jobs.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    let base_url = if let Some(peer) = chunk.node.clone() {
+                        peer
+                    } else {
+                        self.base_url.clone()
+                    };
+
+                    let url = base_url
+                        .join(&format!("/chunk/{}", chunk.seed_offset))
+                        .map_err(|err| {
+                            error!("Failed to build request Url: {:?}", err);
+                            ArweaveError::MalformedRequest
+                        })
+                        .expect("Unable to build url");
+
+                    let mut res = get(client, url.clone(), None).await;
+                    let mut retries = 0;
+                    while retries < retries_per_chunk {
+                        if let Err(err) = res {
+                            error!("Request error: {}", err);
+                            info!("Retrying request, attempt {}", retries);
+                            res = get(client, url.clone(), None).await;
+                        } else {
+                            break;
+                        }
+                        retries += 1;
+                    }
+
+                    if let Err(err) = res {
+                        error!("Request error: {}", err);
+                        return None;
+                    }
+
+                    let res = res.unwrap();
+                    if res.status() == http::StatusCode::NOT_FOUND {
+                        error!("Chunk {} not found in this peer", chunk.seed_offset);
+                    }
+                    Some((chunk, res))
+                }
+            })
+            .buffer_unordered(concurrency_level.into())
+            .map(|res| {
+                let notifier = notifier.clone();
+                let busy_jobs = busy_jobs.clone();
+                let mut retries = 1;
+                async move {
+                    if res.is_none() {
+                        return None;
+                    } 
+                    let (expected_chunk, mut res) = res.unwrap();
+                    let mut fetched_chunk : Option<DataChunk> = None;
+                    while fetched_chunk.is_none() && retries <= retries_per_chunk{
+                        let content_length: u64 = res
+                            .headers()
+                            .get(CONTENT_LENGTH)
+                            .and_then(|h| h.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .ok_or_else(|| {
+                                error!("Could not read chunk size, missing Content-Length header");
+                                ArweaveError::RequestFailed
+                            })
+                            .unwrap();
+
+                        // Getting contents
+                        let mut buf = Vec::with_capacity(content_length as usize);
+                        while let Some(chunk) = match res.chunk().await {
+                            Ok(chunk) => chunk,
+                            Err(err) => {
+                                error!("Failed to read chunk {:?}: {:?}", expected_chunk, err);
+                                None
+                            },
+                        }{
+                            buf.write_all(&chunk).await.map_err(|err| {
+                                error!("Failed to write chunk {:?} data to output: {:?}", expected_chunk, err);
+                                ArweaveError::RequestFailed
+                            }).unwrap();
+                        }
+                        let chunk: Chunk = match serde_json::from_slice(buf.as_slice()) {
+                            Ok(chunk) => chunk,
+                            Err(err) => {
+                                error!("Failed to read chunk {:?}: {:?}", expected_chunk, err); 
+                                Chunk { chunk: &[] }
+                            }
+                        };
+                        let chunk = BASE64URL_NOPAD.decode(chunk.chunk)
+                            .unwrap();
+    
+                        if chunk.len() == expected_chunk.size as usize {
+                            info!(
+                                "Got chunk {:?} attempt={}",
+                                expected_chunk, retries
+                            );
+                            fetched_chunk = Some(DataChunk{ 
+                                chunk: vec![],
+                                node: None,
+                                ..expected_chunk
+                            });
+                        } else {
+                            info!(
+                                "Err chunk {:?} attempt={}",
+                                expected_chunk, retries
+                            );
+                        }
+                        retries += 1;
+                    }
+
+                    let busy_jobs = busy_jobs.fetch_sub(1, Ordering::Relaxed);
+                    if busy_jobs < 2 {
+                        notifier.all_pending_work_done();
+                    }
+                    fetched_chunk
+                }
+            })
+            .buffer_unordered(concurrency_level.into())
+            .filter_map(|n| async {
+                if let Some(chunk) = n.clone() {
+                    let mut mut_output = output.lock().expect("Failed to acquire lock");
+                    let res = mut_output
+                        .seek(std::io::SeekFrom::Start(chunk.file_offset))
+                        .await
+                        .map_err(|err| {
+                            error!("Failed to seek position {}: in file: {}", chunk.file_offset, err);
+                            ArweaveError::RequestFailed
+                        });
+                    if let Err(err) = res {
+                        error!("Failed to write chunk {:?}: {}", chunk, err);
+                        return None;
+                    } else {
+                        let _w = mut_output.write_all(&chunk.chunk).await.map_err(|err| {
+                            error!("Failed to write chunk {:?}: {}", chunk, err);
+                            ArweaveError::UnknownErr
+                        })
+                        .map(|_| {
+                            info!("Wrote chunk {:?}", chunk);
+                            ()
+                        });
+                        let _f = mut_output.flush();
+                    }
+                }
+                n
+            })
+            .collect::<Vec<DataChunk>>()
+            .await;
+
+        if chunks.len() != expected_chunk_amount {
+            error!("{}/{} chunks fetched", chunks.len(), expected_chunk_amount);
+            Err(ArweaveError::MissingChunks)
+        } else {
+            info!("{}/{} chunks fetched", chunks.len(), expected_chunk_amount);
+            Ok(())
+        }
     }
 
     pub async fn find_nodes<Context, HttpClient>(
@@ -1232,6 +1415,171 @@ impl Arweave {
             acc.push(node);
             acc
         }))
+    }
+
+    async fn get_offset<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: &Url,
+        tx_id: &TransactionId
+    ) -> Result<Offset, ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let url = peer
+            .join(&format!("/tx/{}/offset", &tx_id))
+            .map_err(|err| {
+                error!("Failed to build request Url: {:?}", err);
+                ArweaveError::MalformedRequest
+            })
+            .expect("Could not join url");
+
+        let client = ctx.get_http_client();
+        let res: reqwest::Response = get(client, url, None).await?;
+        res.json()
+            .await
+            .map_err(|err| {
+                error!("Failed to parse response for offset data: {:?}", err);
+                ArweaveError::UnknownErr
+            })
+            .map(|Offset { offset, size }| {
+                Offset { offset, size }
+            })
+    }
+
+
+    async fn get_tx_sync_status<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: &Url,
+        tx_id: &TransactionId
+    ) -> Result<bool, ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        //TODO: implement this check
+        Ok(true)
+    }
+
+    async fn get_tx_status<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: &Url,
+        tx_id: &TransactionId
+    ) -> Result<TxStatus, ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let url = peer
+            .join(&format!("/tx/{}/status", &tx_id))
+            .map_err(|err| {
+                error!("Failed to build request Url: {:?}", err);
+                ArweaveError::MalformedRequest
+            })
+            .expect("Could not join url");
+
+        let client = ctx.get_http_client();
+        let res: reqwest::Response = get(client, url, None).await?;
+        res.json()
+            .await
+            .map_err(|err| {
+                error!("Failed to parse response for offset data: {:?}", err);
+                ArweaveError::UnknownErr
+            })
+            .map(|op : TxStatus| {
+                op
+            })
+    }
+
+    pub async fn has_data<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        peer: &Url,
+        tx: &TransactionId
+    ) -> Result<TxStatus, ArweaveError>
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let offset = self.get_offset(ctx, peer, tx)
+            .await
+            .expect("Could not get offset");
+        
+        let is_synced = self.get_tx_sync_status(ctx, peer, tx)
+            .await
+            .expect("Could not get tx sync status");
+            
+        if is_synced {
+            let status = self.get_tx_status(ctx, peer, tx)
+                .await
+                .expect("Could not get tx status");
+            Ok(status)
+        } else {
+           Err(ArweaveError::NodeNotSynced)
+        }
+    }
+
+
+    pub async fn is_seeded<Context, HttpClient>(
+        &self,
+        ctx: &Context,
+        tx_id: TransactionId,
+        threshold: u64,
+        peers: Vec<Node>,
+    ) -> Result<(bool, Vec<Node>), ArweaveError> 
+    where
+        Context: ClientAccess<HttpClient>,
+        HttpClient: Client<Request = reqwest::Request, Response = reqwest::Response>
+            + Send
+            + Sync
+            + Clone
+            + 'static,
+        HttpClient::Error: From<reqwest::Error>,
+    {
+        let mut return_values = Vec::<TxStatus>::new();
+        let mut seeded_peers = Vec::<Node>::new();
+        for peer in peers {
+            let peer_url = match Url::from_str(&peer.0) {
+                Ok(url) => url,
+                Err(err) => {
+                    error!("Invalid url: {}", err);
+                    continue;
+                },
+            };
+
+            let has_data = self
+                .has_data(ctx, &peer_url, &tx_id)
+                .await;
+            if let Ok(status) = has_data {
+                //TODO: praise miner
+                seeded_peers.push(peer);
+                return_values.push(status);
+            }
+        }
+
+        if seeded_peers.len() < threshold as usize {
+            return Ok((false, seeded_peers));
+        }
+        let tx_stats = return_values
+            .first()
+            .expect("No first value present");
+        let network = self.get_network_info(ctx)
+            .await
+            .expect("Could not get network info");
+        
+        if network.height > tx_stats.block_height && tx_stats.number_of_confirmations >= CONFIRMATION_THRESHOLD {
+            //TODO: implement check_indexed on Bundlr logic
+            Ok((true, seeded_peers))
+        } else {
+            Ok((false, seeded_peers))
+        }
     }
 }
 
