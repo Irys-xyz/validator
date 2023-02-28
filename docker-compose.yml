@@ -29,7 +29,7 @@ services:
         target: /wallet.json
         read_only: true
       
-      - /bundles:/bundles
+      - bundles:/bundles
     environment:
      - VALIDATOR_KEY=./wallet.json
      - DATABASE_URL=${DATABASE_URL:-postgres://bundlr:bundlr@postgres:5432/bundlr}
@@ -62,3 +62,4 @@ services:
   
 volumes:
   postgres:
+  bundles:
